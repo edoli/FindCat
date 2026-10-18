@@ -14,7 +14,7 @@ cargo install trunk --version 0.21.14 --locked
 trunk serve --release
 ```
 
-`http://127.0.0.1:8080`에서 플레이할 수 있습니다. 정적 웹 배포본은 `trunk build --release --locked --public-url /FindCat/`로 `dist/web`에 생성합니다. `.github/workflows/pages.yml`은 `main` push와 수동 실행 시 게임 규칙 테스트 → WASM 빌드 → GitHub Pages 배포를 수행합니다. Pages의 Source는 **GitHub Actions**입니다.
+`http://127.0.0.1:8080`에서 플레이할 수 있습니다. 정적 웹 배포본은 `trunk build --release --locked --public-url /FindCat/`로 `dist/web`에 생성합니다. 이어서 `uv run --project python python python/web_licenses.py`로 의존성 고지문을 포함합니다. `.github/workflows/pages.yml`은 `main` push와 수동 실행 시 게임 규칙 테스트 → WASM 빌드 → GitHub Pages 배포를 수행합니다. Pages의 Source는 **GitHub Actions**입니다.
 
 웹 검증은 `uv run --project python python python/validate_web.py --url https://edoli.github.io/FindCat/`로 실행합니다. Playwright Chromium이 필요하며, `uv run --project python playwright install chromium`으로 설치합니다. OS 마우스와 키보드를 사용하지 않고 실제 브라우저 안에서 플레이합니다. `?testbed`는 검사에 필요한 상태와 버튼 좌표를 읽기 전용 DOM 속성으로 내보냅니다.
 

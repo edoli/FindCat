@@ -71,7 +71,11 @@ pub fn drive(
     );
     time.set_relative_speed(4.);
     let c = &game.0;
-    assert!(cat.scale.max_element() <= CAT_SCALE * 1.02, "Cat became oversized in {:?}", c.phase);
+    assert!(
+        cat.scale.max_element() <= CAT_SCALE * 1.02,
+        "Cat became oversized in {:?}",
+        c.phase
+    );
     if t.step == 7 && t.changed.elapsed().as_secs_f32() > 0.20 {
         input.release(KeyCode::KeyD);
     }

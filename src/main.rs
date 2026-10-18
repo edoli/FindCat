@@ -1,12 +1,14 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+#[cfg(target_arch = "wasm32")]
+mod browser;
 mod navigation;
 mod presentation;
 #[cfg(not(target_arch = "wasm32"))]
 mod testbed;
 mod ui;
-#[cfg(target_arch = "wasm32")]
-mod browser;
 
+#[cfg(not(target_arch = "wasm32"))]
+use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use bevy::{
     audio::Volume,
     camera::{ScalingMode, Viewport},
@@ -15,8 +17,6 @@ use bevy::{
 };
 use findcat::game::*;
 use std::{collections::VecDeque, path::PathBuf};
-#[cfg(not(target_arch = "wasm32"))]
-use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 
 // The cat's model is 1.34 units high; the detective is 1.45 * 0.72 units.
 // Keep a believable pet-to-person ratio in every scene, including the escape.
@@ -64,10 +64,14 @@ fn main() {
     let (asset_dir, testbed, save, load) = native_files();
     #[cfg(target_arch = "wasm32")]
     let (asset_dir, testbed, save, load) = (
-        "assets".to_owned(), false, PathBuf::from("findcat-save-v1"),
-        web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+        "assets".to_owned(),
+        false,
+        PathBuf::from("findcat-save-v1"),
+        web_sys::window()
+            .and_then(|w| w.local_storage().ok().flatten())
             .and_then(|s| s.get_item("findcat-save-v1").ok().flatten())
-            .and_then(|s| serde_json::from_str::<Case>(&s).ok()).filter(Case::validate),
+            .and_then(|s| serde_json::from_str::<Case>(&s).ok())
+            .filter(Case::validate),
     );
     run(asset_dir, testbed, save, load);
 }
@@ -98,7 +102,12 @@ fn native_files() -> (String, bool, PathBuf, Option<Case>) {
         .ok()
         .and_then(|s| serde_json::from_str::<Case>(&s).ok())
         .filter(Case::validate);
-    (asset_dir.to_string_lossy().into_owned(), testbed, save, load)
+    (
+        asset_dir.to_string_lossy().into_owned(),
+        testbed,
+        save,
+        load,
+    )
 }
 
 fn run(asset_dir: String, testbed: bool, save: PathBuf, load: Option<Case>) {
@@ -124,6 +133,7 @@ fn run(asset_dir: String, testbed: bool, save: PathBuf, load: Option<Case>) {
         DefaultPlugins
             .set(AssetPlugin {
                 file_path: asset_dir,
+                meta_check: bevy::asset::AssetMetaCheck::Never,
                 ..default()
             })
             .set(WindowPlugin {
@@ -195,12 +205,17 @@ fn run(asset_dir: String, testbed: bool, save: PathBuf, load: Option<Case>) {
         ),
     );
     #[cfg(not(target_arch = "wasm32"))]
+    app.add_systems(Update, screenshots);
+    #[cfg(not(target_arch = "wasm32"))]
     if testbed {
         app.init_resource::<testbed::Testbed>()
             .add_systems(Update, testbed::drive.after(ui::proximity));
     }
     #[cfg(target_arch = "wasm32")]
-    app.add_systems(PostUpdate, browser::status.after(bevy::ui::UiSystems::Layout));
+    app.add_systems(
+        PostUpdate,
+        browser::status.after(bevy::ui::UiSystems::Layout),
+    );
     app.run();
 }
 
@@ -324,15 +339,7 @@ fn input(
     mut acts: ResMut<Actions>,
     mut travel: ResMut<Travel>,
     player: Single<&Transform, With<Detective>>,
-    mut commands: Commands,
 ) {
-    #[cfg(not(target_arch = "wasm32"))]
-    if keys.just_pressed(KeyCode::F12) {
-        let _ = std::fs::create_dir_all("artifacts");
-        commands
-            .spawn(Screenshot::primary_window())
-            .observe(save_to_disk("artifacts/screenshot.png"));
-    }
     if keys.just_pressed(KeyCode::KeyM) {
         acts.0.push_back(Action::Sound);
     }
@@ -402,6 +409,16 @@ fn input(
             }
         }
         _ => {}
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn screenshots(keys: Res<ButtonInput<KeyCode>>, mut commands: Commands) {
+    if keys.just_pressed(KeyCode::F12) {
+        let _ = std::fs::create_dir_all("artifacts");
+        commands
+            .spawn(Screenshot::primary_window())
+            .observe(save_to_disk("artifacts/screenshot.png"));
     }
 }
 
@@ -525,9 +542,11 @@ pub fn save_case(path: &std::path::Path, c: &Case) -> std::io::Result<()> {
 
 #[cfg(target_arch = "wasm32")]
 pub fn save_case(_: &std::path::Path, c: &Case) -> std::io::Result<()> {
-    let storage = web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+    let storage = web_sys::window()
+        .and_then(|w| w.local_storage().ok().flatten())
         .ok_or_else(|| std::io::Error::other("Browser storage unavailable"))?;
-    storage.set_item("findcat-save-v1", &serde_json::to_string(c)?)
+    storage
+        .set_item("findcat-save-v1", &serde_json::to_string(c)?)
         .map_err(|_| std::io::Error::other("Browser storage write failed"))
 }
 

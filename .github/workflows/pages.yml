@@ -18,6 +18,7 @@ jobs:
     timeout-minutes: 45
     env:
       CARGO_BUILD_JOBS: 2
+      NO_COLOR: "true"
     steps:
       - uses: actions/checkout@v6
       - name: Install Rust and WebAssembly target
@@ -37,6 +38,8 @@ jobs:
         uses: actions/configure-pages@v5
       - name: Build WebGL2 game
         run: trunk build --release --locked --public-url "${{ steps.pages.outputs.base_path }}/"
+      - name: Include dependency notices
+        run: python3 python/web_licenses.py
       - name: Upload game
         uses: actions/upload-pages-artifact@v4
         with:
