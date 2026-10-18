@@ -8,7 +8,7 @@
   <meta name="description" content="고양이 탐정이 되어 율의 작은 발자국을 따라가세요. 고양이의 마음을 배우는 따뜻한 3D 추리 게임.">
   <title>오늘도, 너에게 · FindCat</title>
   <base data-trunk-public-url>
-  <link data-trunk rel="rust" data-bin="findcat" data-cargo-features="web" data-wasm-opt="z">
+  <link data-trunk rel="rust" data-bin="findcat" data-cargo-features="web" data-wasm-opt="z" data-initializer="web/initializer.mjs">
   <link data-trunk rel="copy-dir" href="assets">
   <link data-trunk rel="copy-file" href="LICENSE">
   <link data-trunk rel="copy-file" href="THIRD_PARTY.md">
@@ -25,6 +25,11 @@
     #boot h1 { font-size:clamp(30px,5vw,48px); margin:12px 0; }
     #boot p { line-height:1.8; color:#e2e9da; max-width:480px; margin:8px auto; }
     #boot small { color:#c2d1bd; }
+    #boot progress { width:min(320px,80vw); margin:12px auto; accent-color:#e8c586; }
+    #boot details { max-width:520px; overflow-wrap:anywhere; text-align:left; margin:12px auto; }
+    #boot pre { white-space:pre-wrap; font-size:12px; }
+    #boot button { margin:12px auto; padding:12px 24px; border:0; border-radius:8px; background:#eed9ab; color:#263f35; font:inherit; cursor:pointer; }
+    #boot [hidden] { display:none; }
     #fullscreen-toggle { position:fixed; right:8px; bottom:8px; z-index:3; width:36px; height:36px; padding:8px; border:1px solid #c2d1bd; border-radius:9px; background:#263f35e6; color:#fbf7ed; touch-action:manipulation; }
     #fullscreen-toggle[hidden] { display:none; }
     #fullscreen-toggle svg { display:block; width:100%; height:100%; }
@@ -33,6 +38,10 @@
   </style>
   <script>
     if (new URLSearchParams(location.search).has('testbed')) document.documentElement.setAttribute('data-testbed','');
+    const mobile = navigator.userAgentData?.mobile === true
+      || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (mobile) document.documentElement.setAttribute('data-mobile','');
     // Browsers suspend sound until a gesture. Resume the game's own contexts on input.
     const contexts = [];
     if (window.AudioContext) {
@@ -41,30 +50,53 @@
         constructor(...args) { super(...args); contexts.push(this); }
       };
       for (const event of ['pointerdown','keydown']) addEventListener(event, () => {
-        for (const ctx of contexts) if (ctx.state === 'suspended') ctx.resume();
+        for (const ctx of contexts) if (ctx.state === 'suspended') ctx.resume().catch(() => {});
       }, {capture:true});
     }
+    window.findcatFailure = error => {
+      const message = String(error?.stack || error?.message || error || '알 수 없는 오류');
+      // Winit uses this exception to hand control back to the browser event loop.
+      if (message.includes('Using exceptions for control flow')) return;
+      const boot = document.getElementById('boot');
+      if (!boot || boot.dataset.failed) return;
+      boot.dataset.failed = 'true';
+      boot.style.display = 'grid';
+      document.getElementById('status').textContent = /memory|allocation|context lost/i.test(message)
+        ? '그래픽 메모리가 부족하거나 화면 연결이 끊겼어요. 다른 탭을 닫은 뒤 다시 시도해 주세요.'
+        : '게임을 불러오지 못했어요. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.';
+      document.getElementById('boot-progress').hidden = true;
+      document.getElementById('boot-error').hidden = false;
+      document.getElementById('boot-error-text').textContent = message;
+      document.getElementById('boot-retry').hidden = false;
+    };
     addEventListener('error', e => {
-      const status = document.getElementById('status');
-      if (status && document.getElementById('boot').style.display !== 'none')
-        status.textContent = '게임을 시작하지 못했어요. 브라우저를 업데이트하고 새로고침해 주세요.';
-    });
+      if (e.target === window || e.target instanceof HTMLScriptElement)
+        window.findcatFailure(e.error || e.message || '게임 실행 파일을 내려받지 못했어요.');
+    }, true);
+    addEventListener('unhandledrejection', e => window.findcatFailure(e.reason));
     addEventListener('TrunkApplicationStarted', () => {
-      document.getElementById('status').textContent = '동네와 고양이를 불러오고 있어요…';
+      if (!document.getElementById('boot').dataset.failed)
+        document.getElementById('status').textContent = '동네와 고양이를 불러오고 있어요…';
     });
   </script>
 </head>
 <body>
   <main id="frame" aria-label="오늘도, 너에게 게임"><div id="surface"><canvas id="game" tabindex="0" aria-label="게임 화면. Enter로 시작, 장소 번호를 클릭해 조사하세요."></canvas></div></main>
-  <div id="boot" role="status"><div class="paw">🐾</div><h1>오늘도, 너에게</h1><p id="status">작은 발자국을 따라갈 준비 중이에요…<br>처음에는 게임을 내려받는 데 잠시 걸릴 수 있어요.</p><p><small>PC 브라우저 권장 · Enter로 시작 · 장소 번호를 클릭해 조사</small></p></div>
+  <div id="boot" role="status"><div class="paw">🐾</div><h1>오늘도, 너에게</h1><p id="status">작은 발자국을 따라갈 준비 중이에요…<br>처음에는 게임을 내려받는 데 잠시 걸릴 수 있어요.</p><progress id="boot-progress" aria-label="게임 다운로드"></progress><button id="boot-retry" hidden>다시 불러오기</button><details id="boot-error" hidden><summary>오류 자세히 보기</summary><pre id="boot-error-text"></pre></details><p><small>가로 화면 권장 · 시작 버튼을 눌러 율을 만나세요</small></p></div>
   <button id="fullscreen-toggle" type="button" hidden aria-label="전체화면 켜기" aria-pressed="false" title="전체화면 켜기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg></button>
   <script>
+    document.getElementById('boot-retry').addEventListener('click', () => {
+      const url = new URL(location.href);
+      url.searchParams.set('reload', Date.now());
+      location.replace(url);
+    });
+    document.getElementById('game').addEventListener('webglcontextlost', event => {
+      event.preventDefault();
+      window.findcatFailure(new Error('WebGL context lost'));
+    });
     (() => {
       // Screen size alone would also match small desktop windows. Include touch iPads
       // that identify as Macs, without opting desktop browsers into automatic fullscreen.
-      const mobile = navigator.userAgentData?.mobile === true
-        || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
-        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
       if (!mobile) return;
 
       const root = document.documentElement;

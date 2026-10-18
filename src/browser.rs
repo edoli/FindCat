@@ -3,6 +3,13 @@ use crate::*;
 use bevy::text::FontSmoothing;
 use bevy::world_serialization::{WorldInstance, WorldInstanceSpawner};
 
+pub fn mobile() -> bool {
+    web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.document_element())
+        .is_some_and(|root| root.has_attribute("data-mobile"))
+}
+
 /// Keep the GPU backbuffer, camera targets and glyph atlas at the actual display density.
 /// CSS only controls the surface's size; it never scales a previously rendered frame.
 pub fn resize(
@@ -87,7 +94,9 @@ pub fn status(
         if loaded {
             *ready = true;
             if let Some(boot) = doc.get_element_by_id("boot") {
-                let _ = boot.set_attribute("style", "display:none");
+                if !boot.has_attribute("data-failed") {
+                    let _ = boot.set_attribute("style", "display:none");
+                }
             }
             if let Some(canvas) = doc.get_element_by_id("game") {
                 use wasm_bindgen::JsCast;

@@ -259,6 +259,17 @@ fn setup(
     mut mats: ResMut<Assets<StandardMaterial>>,
     fonts: Res<Assets<Font>>,
 ) {
+    // High-DPI tablets otherwise allocate four full-resolution color/depth samples.
+    // Preserve the physical resolution and the independent glyph/UI antialiasing.
+    #[cfg(target_arch = "wasm32")]
+    let msaa = if browser::mobile() {
+        commands.insert_resource(bevy::light::DirectionalLightShadowMap { size: 1024 });
+        Msaa::Off
+    } else {
+        Msaa::Sample4
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    let msaa = Msaa::Sample4;
     commands.insert_resource(Media {
         font: assets.load("fonts/Pretendard-Regular.otf"),
         bold: assets.load("fonts/Pretendard-SemiBold.otf"),
@@ -314,7 +325,7 @@ fn setup(
         }),
         Transform::from_xyz(12., 17.5, 23.).looking_at(Vec3::new(0., 0., 0.3), Vec3::Y),
         WorldCamera,
-        Msaa::Sample4,
+        msaa,
     ));
     commands.spawn((
         Camera2d,
@@ -324,7 +335,7 @@ fn setup(
             ..default()
         },
         IsDefaultUiCamera,
-        Msaa::Sample4,
+        msaa,
         bevy::ui_render::UiAntiAlias::On,
     ));
     let ring = meshes.add(Torus::new(0.23, 0.26));

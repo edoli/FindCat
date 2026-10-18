@@ -12,7 +12,11 @@
 
 `uv run --project python python python/validate_typography.py --url https://edoli.github.io/FindCat/`는 DPR 1 / 2에서 실제 게임 글자와 같은 글꼴의 브라우저 렌더링을 비교하고, UI를 반복해서 다시 그려도 글자 픽셀이 변하지 않는지 확인합니다. 비교 이미지는 `artifacts/typography`에 생성합니다.
 
-WebGL2를 지원하는 최신 PC 브라우저에서 실행하세요. 첫 입력 후 소리가 켜지며, 진행 상황은 해당 브라우저의 로컬 저장소에 자동 저장됩니다. 렌더링 해상도는 브라우저 창 크기 × 기기의 픽셀 배율(DPR)에 맞춥니다. 창 크기와 모니터 배율이 바뀌면 3D 화면과 글자도 해당 해상도로 다시 그립니다. UI 크기는 Bevy 안에서 조절하므로 완성된 캔버스를 CSS로 확대하지 않습니다. 글자는 grayscale antialiasing, 3D는 4× MSAA를 사용합니다.
+WebGL2를 지원하는 최신 브라우저에서 실행하세요. 첫 입력 후 소리가 켜지며, 진행 상황은 해당 브라우저의 로컬 저장소에 자동 저장됩니다. 렌더링 해상도는 브라우저 창 크기 × 기기의 픽셀 배율(DPR)에 맞춥니다. 창 크기와 모니터 배율이 바뀌면 3D 화면과 글자도 해당 해상도로 다시 그립니다. UI 크기는 Bevy 안에서 조절하므로 완성된 캔버스를 CSS로 확대하지 않습니다. 글자는 grayscale antialiasing, 데스크톱 3D는 4× MSAA를 사용합니다. 모바일·태블릿에서는 원래 해상도와 글자/UI의 안티앨리어싱을 유지하면서 MSAA를 끄고 그림자 맵을 1024로 줄여 그래픽 메모리 부담을 낮춥니다.
+
+로딩 화면에 다운로드 진행량을 표시하며, 실행 실패 시 오류 상세와 다시 불러오기 버튼을 제공합니다. Pages의 10분 HTML 캐시 때문에 재배포 직후 이전 페이지의 실행 파일이 404가 되지 않도록, 최근 두 배포의 JS/WASM도 함께 유지합니다.
+
+데스크톱·Android 태블릿·iPad WebKit의 시작 화면, 터치 입력, 회전 후 해상도, 다운로드 실패 안내는 `uv run --locked --project python python python/validate_web_startup.py --url https://edoli.github.io/FindCat/`로 검사합니다. `uv run --locked --project python playwright install chromium webkit`으로 검사 브라우저를 설치합니다. 실제 태블릿 GPU는 별도 기기 확인이 필요합니다.
 
 ```powershell
 rustup target add wasm32-unknown-unknown

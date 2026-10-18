@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: github-pages
@@ -40,6 +41,23 @@ jobs:
         run: trunk build --release --locked --public-url "${{ steps.pages.outputs.base_path }}/"
       - name: Include dependency notices
         run: python3 python/web_licenses.py
+      - name: Preserve bootstraps for cached Pages documents
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p artifacts/previous-pages
+          for run in $(gh run list --workflow pages.yml --status success --limit 2 --json databaseId --jq '.[].databaseId'); do
+            # Expired artifacts are older than the 10-minute Pages HTML cache.
+            if ! gh run download "$run" --name github-pages --dir "artifacts/previous-pages/$run"; then
+              echo "::warning::Previous Pages artifact $run is unavailable; skipping it."
+            fi
+          done
+          python3 python/retain_web_releases.py artifacts/previous-pages
+      - name: Verify desktop, tablet and cached-document startup
+        run: |
+          python3 -m pip install playwright==1.64.0 pillow==13.0.0
+          python3 -m playwright install --with-deps chromium
+          python3 python/validate_web_startup.py --chromium-only --cached-archives artifacts/previous-pages
       - name: Upload game
         uses: actions/upload-pages-artifact@v4
         with:
