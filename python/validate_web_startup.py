@@ -23,6 +23,7 @@ parser.add_argument('--url')
 parser.add_argument('--output', type=Path, default=ROOT / 'artifacts/web-startup')
 parser.add_argument('--chromium-only', action='store_true')
 parser.add_argument('--profile', choices=['desktop', 'android-tablet', 'ipad-webkit'])
+parser.add_argument('--software-renderer', action='store_true', help='Use smaller surfaces on GPU-less CI; preserve tablet DPR/touch paths')
 parser.add_argument('--cached-archives', type=Path, help='Check old HTML against current deployment assets')
 args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=True)
@@ -58,12 +59,21 @@ try:
         if args.profile:
             profiles = [profile for profile in profiles if profile[0] == args.profile]
         for name, engine, options in profiles:
+            if args.software_renderer:
+                options['viewport'] = ({'width': 400, 'height': 640} if options.get('has_touch')
+                                       else {'width': 1280, 'height': 720})
             launch = {}
             if engine == p.chromium:
                 launch['args'] = ['--enable-webgl', '--ignore-gpu-blocklist'] + (
                     ['--use-angle=d3d11'] if sys.platform == 'win32' else ['--enable-unsafe-swiftshader'])
             browser = engine.launch(headless=True, **launch)
             page = browser.new_page(**options)
+            page.set_default_timeout(90000)
+            if args.software_renderer:
+                # Headless fullscreen can expand to the host screen instead of the
+                # emulated device and multiply SwiftShader's surface size again.
+                # Also exercise the game's unsupported-fullscreen fallback in CI.
+                page.add_init_script("Object.defineProperty(document, 'fullscreenEnabled', {value: false});")
             logs, errors = [], []
             def log(message):
                 logs.append(message)
@@ -86,7 +96,7 @@ try:
                 assert render['physical'] == [round(v * render['dpr']) for v in render['logical']], render
                 assert render['viewport'] == render['physical'], render
                 assert page.locator('#boot').is_hidden(), page.locator('#status').inner_text()
-                page.screenshot(path=str(args.output / f'{name}-title.png'), timeout=60000)
+                page.screenshot(path=str(args.output / f'{name}-title.png'), timeout=90000)
                 image = Image.open(args.output / f'{name}-title.png').convert('RGB')
                 assert max(ImageStat.Stat(image).stddev) > 15, 'Blank title frame'
                 start = next(b for b in state()['buttons'] if b['action'] == 'Start')
@@ -100,8 +110,9 @@ try:
                     # Chromium forbids a simulated window resize while fullscreen.
                     # Leave the first-touch fullscreen before emulating rotation.
                     page.evaluate("async () => { if (document.fullscreenElement) await document.exitFullscreen(); else if (document.webkitFullscreenElement) document.webkitExitFullscreen(); }")
-                    page.set_viewport_size({'width': 1194, 'height': 834})
-                    page.wait_for_function("Math.abs(JSON.parse(document.documentElement.getAttribute('data-findcat')).render.logical[0] - 1194) < 1", timeout=15000)
+                    rotation = {'width': 640, 'height': 400} if args.software_renderer else {'width': 1194, 'height': 834}
+                    page.set_viewport_size(rotation)
+                    page.wait_for_function("width => Math.abs(JSON.parse(document.documentElement.getAttribute('data-findcat')).render.logical[0] - width) < 1", arg=rotation['width'], timeout=30000)
                 awaitable_errors = [e for e in errors if 'Using exceptions for control flow' not in e]
                 assert not awaitable_errors, awaitable_errors
                 report = {'profile': name, 'passed': True, 'render': render,

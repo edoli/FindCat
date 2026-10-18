@@ -57,7 +57,7 @@ jobs:
         run: |
           python3 -m pip install playwright==1.64.0 pillow==13.0.0
           python3 -m playwright install --with-deps chromium
-          python3 python/validate_web_startup.py --chromium-only --cached-archives artifacts/previous-pages
+          python3 python/validate_web_startup.py --chromium-only --software-renderer --cached-archives artifacts/previous-pages
       - name: Upload game
         uses: actions/upload-pages-artifact@v4
         with:
