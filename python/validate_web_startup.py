@@ -23,7 +23,6 @@ parser.add_argument('--url')
 parser.add_argument('--output', type=Path, default=ROOT / 'artifacts/web-startup')
 parser.add_argument('--chromium-only', action='store_true')
 parser.add_argument('--profile', choices=['desktop', 'android-tablet', 'ipad-webkit'])
-parser.add_argument('--software-renderer', action='store_true', help='Use smaller surfaces on GPU-less CI; preserve tablet DPR/touch paths')
 parser.add_argument('--cached-archives', type=Path, help='Check old HTML against current deployment assets')
 args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=True)
@@ -52,28 +51,27 @@ try:
     with sync_playwright() as p:
         profiles = [
             ('desktop', p.chromium, {'viewport': {'width': 1440, 'height': 900}}),
-            ('android-tablet', p.chromium, dict(p.devices['Galaxy Tab S4'])),
+            # S8 Ultra's 2960 x 1848 screen at representative DPR 2. This
+            # exercises screen/input behavior on the host GPU, not Adreno emulation.
+            ('android-tablet', p.chromium, {
+                'viewport': {'width': 1480, 'height': 924},
+                'screen': {'width': 1480, 'height': 924},
+                'device_scale_factor': 2, 'is_mobile': True, 'has_touch': True,
+                'user_agent': 'Mozilla/5.0 (Linux; Android 13; SM-X900) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36',
+            }),
         ]
         if not args.chromium_only:
             profiles.append(('ipad-webkit', p.webkit, dict(p.devices['iPad Pro 11'])))
         if args.profile:
             profiles = [profile for profile in profiles if profile[0] == args.profile]
         for name, engine, options in profiles:
-            if args.software_renderer:
-                options['viewport'] = ({'width': 400, 'height': 640} if options.get('has_touch')
-                                       else {'width': 1280, 'height': 720})
             launch = {}
             if engine == p.chromium:
                 launch['args'] = ['--enable-webgl', '--ignore-gpu-blocklist'] + (
-                    ['--use-angle=d3d11'] if sys.platform == 'win32' else ['--enable-unsafe-swiftshader'])
+                    ['--use-angle=d3d11'] if sys.platform == 'win32' else []) + ['--disable-software-rasterizer']
             browser = engine.launch(headless=True, **launch)
             page = browser.new_page(**options)
             page.set_default_timeout(90000)
-            if args.software_renderer:
-                # Headless fullscreen can expand to the host screen instead of the
-                # emulated device and multiply SwiftShader's surface size again.
-                # Also exercise the game's unsupported-fullscreen fallback in CI.
-                page.add_init_script("Object.defineProperty(document, 'fullscreenEnabled', {value: false});")
             logs, errors = [], []
             def log(message):
                 logs.append(message)
@@ -91,6 +89,12 @@ try:
                 page.wait_for_timeout(2500)
                 state = lambda: page.evaluate("JSON.parse(document.documentElement.getAttribute('data-findcat'))")
                 render = state()['render']
+                renderer = page.evaluate("""() => {
+                    const gl = document.getElementById('game').getContext('webgl2');
+                    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+                    return gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER);
+                }""")
+                assert not any(name in renderer.lower() for name in ['swiftshader', 'llvmpipe', 'lavapipe', 'software rasterizer']), renderer
                 assert render['msaa'] == (4 if name == 'desktop' else 1), render
                 assert render['text_antialiased'], render
                 assert render['physical'] == [round(v * render['dpr']) for v in render['logical']], render
@@ -110,12 +114,12 @@ try:
                     # Chromium forbids a simulated window resize while fullscreen.
                     # Leave the first-touch fullscreen before emulating rotation.
                     page.evaluate("async () => { if (document.fullscreenElement) await document.exitFullscreen(); else if (document.webkitFullscreenElement) document.webkitExitFullscreen(); }")
-                    rotation = {'width': 640, 'height': 400} if args.software_renderer else {'width': 1194, 'height': 834}
+                    rotation = {'width': 924, 'height': 1480} if name == 'android-tablet' else {'width': 1194, 'height': 834}
                     page.set_viewport_size(rotation)
                     page.wait_for_function("width => Math.abs(JSON.parse(document.documentElement.getAttribute('data-findcat')).render.logical[0] - width) < 1", arg=rotation['width'], timeout=30000)
                 awaitable_errors = [e for e in errors if 'Using exceptions for control flow' not in e]
                 assert not awaitable_errors, awaitable_errors
-                report = {'profile': name, 'passed': True, 'render': render,
+                report = {'profile': name, 'passed': True, 'render': render, 'gpu_renderer': renderer,
                           'start_input': 'touch' if options.get('has_touch') else 'mouse',
                           'elapsed_seconds': round(time.monotonic() - started, 2)}
                 reports.append(report)
@@ -154,7 +158,7 @@ try:
                         old_html = stream.read()
                 # Reproduce the browser's cached document while all other requests use
                 # the current server. No old JS/WASM is provided by this route.
-                browser = p.chromium.launch(headless=True, args=['--use-angle=d3d11'] if sys.platform == 'win32' else ['--enable-unsafe-swiftshader'])
+                browser = p.chromium.launch(headless=True, args=['--disable-software-rasterizer'] + (['--use-angle=d3d11'] if sys.platform == 'win32' else []))
                 try:
                     page = browser.new_page()
                     page.route(url, lambda route: route.fulfill(body=old_html, content_type='text/html'))

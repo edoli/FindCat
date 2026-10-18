@@ -16,7 +16,7 @@ WebGL2를 지원하는 최신 브라우저에서 실행하세요. 첫 입력 후
 
 로딩 화면에 다운로드 진행량을 표시하며, 실행 실패 시 오류 상세와 다시 불러오기 버튼을 제공합니다. Pages의 10분 HTML 캐시 때문에 재배포 직후 이전 페이지의 실행 파일이 404가 되지 않도록, 최근 두 배포의 JS/WASM도 함께 유지합니다.
 
-데스크톱·Android 태블릿·iPad WebKit의 시작 화면, 터치 입력, 회전 후 해상도, 다운로드 실패 안내는 `uv run --locked --project python python python/validate_web_startup.py --url https://edoli.github.io/FindCat/`로 검사합니다. `uv run --locked --project python playwright install chromium webkit`으로 검사 브라우저를 설치합니다. 실제 태블릿 GPU는 별도 기기 확인이 필요합니다.
+데스크톱·Android 태블릿·iPad WebKit의 시작 화면, 터치 입력, 회전 후 해상도, 다운로드 실패 안내는 `uv run --locked --project python python python/validate_web_startup.py --url https://edoli.github.io/FindCat/`로 검사합니다. Android 설정은 Galaxy Tab S8 Ultra의 2960 × 1848 화면과 터치를 호스트 GPU에서 검사하며 실제 Adreno GPU를 에뮬레이션하지 않습니다. `uv run --locked --project python playwright install chromium webkit`으로 검사 브라우저를 설치합니다. Chromium 검사에서 소프트웨어 렌더링을 허용하지 않으며, GPU가 없는 GitHub Actions에서는 게임 규칙 테스트와 빌드만 수행합니다. 실제 태블릿 GPU는 별도 기기 확인이 필요합니다.
 
 ```powershell
 rustup target add wasm32-unknown-unknown

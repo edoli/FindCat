@@ -53,6 +53,7 @@
         for (const ctx of contexts) if (ctx.state === 'suspended') ctx.resume().catch(() => {});
       }, {capture:true});
     }
+    const recentLogs = [];
     window.findcatFailure = error => {
       const message = String(error?.stack || error?.message || error || '알 수 없는 오류');
       // Winit uses this exception to hand control back to the browser event loop.
@@ -66,9 +67,27 @@
         : '게임을 불러오지 못했어요. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.';
       document.getElementById('boot-progress').hidden = true;
       document.getElementById('boot-error').hidden = false;
-      document.getElementById('boot-error-text').textContent = message;
+      document.getElementById('boot-error-text').textContent = [
+        message, navigator.userAgent,
+        `화면 ${innerWidth} × ${innerHeight} · DPR ${devicePixelRatio}`,
+        ...recentLogs,
+      ].join('\n');
       document.getElementById('boot-retry').hidden = false;
     };
+    // Bevy's asynchronous asset/shader failures can be logged without throwing a
+    // JavaScript exception. Surface those failures instead of leaving a blank game.
+    for (const level of ['log', 'warn', 'error']) {
+      const original = console[level].bind(console);
+      console[level] = (...args) => {
+        original(...args);
+        const line = args.map(value => String(value)).join(' ');
+        recentLogs.push(line);
+        if (recentLogs.length > 20) recentLogs.shift();
+        if (/panicked at|Validation Error|Failed to load asset/i.test(line)
+            || (/\bERROR\b/.test(line) && /bevy_render|bevy_pbr|wgpu|shader/i.test(line)))
+          window.findcatFailure(line);
+      };
+    }
     addEventListener('error', e => {
       if (e.target === window || e.target instanceof HTMLScriptElement)
         window.findcatFailure(e.error || e.message || '게임 실행 파일을 내려받지 못했어요.');

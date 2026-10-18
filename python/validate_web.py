@@ -26,7 +26,7 @@ with sync_playwright() as p:
     browser = p.chromium.launch(headless=True, args=[
         '--enable-webgl', '--ignore-gpu-blocklist',
         '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
-    ] + (['--use-angle=d3d11'] if sys.platform == 'win32' else ['--enable-unsafe-swiftshader']))
+    ] + ['--disable-software-rasterizer'] + (['--use-angle=d3d11'] if sys.platform == 'win32' else []))
     page = browser.new_page(viewport={'width':1440, 'height':900}, device_scale_factor=1)
     page.on('pageerror', lambda e: errors.append(str(e)))
     def log_message(m):

@@ -15,7 +15,7 @@ url=urlunsplit((url.scheme,url.netloc,url.path,'testbed',''))
 records,errors=[],[]
 with sync_playwright() as p:
     browser=p.chromium.launch(headless=True,args=['--enable-webgl','--ignore-gpu-blocklist']+
-        (['--use-angle=d3d11'] if sys.platform=='win32' else ['--enable-unsafe-swiftshader']))
+        ['--disable-software-rasterizer'] + (['--use-angle=d3d11'] if sys.platform=='win32' else []))
     def state():return page.evaluate("JSON.parse(document.documentElement.getAttribute('data-findcat'))")
     def wait(expression):
         page.wait_for_function("""expression=>{const s=JSON.parse(document.documentElement.getAttribute('data-findcat')||'{}');

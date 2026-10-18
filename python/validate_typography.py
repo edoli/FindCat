@@ -13,7 +13,7 @@ url=urlsplit(args.url);url=urlunsplit((url.scheme,url.netloc,url.path,'testbed',
 results=[]
 with sync_playwright() as p:
     browser=p.chromium.launch(headless=True,args=['--enable-webgl','--ignore-gpu-blocklist']+
-        (['--use-angle=d3d11'] if sys.platform=='win32' else ['--enable-unsafe-swiftshader']))
+        ['--disable-software-rasterizer'] + (['--use-angle=d3d11'] if sys.platform=='win32' else []))
     try:
         for dpr in [1,2]:
             page=browser.new_page(viewport={'width':1440,'height':900},device_scale_factor=dpr)
