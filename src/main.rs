@@ -145,8 +145,16 @@ fn run(asset_dir: String, testbed: bool, save: PathBuf, load: Option<Case>) {
                     fit_canvas_to_parent: cfg!(target_arch = "wasm32"),
                     prevent_default_event_handling: true,
                     resize_constraints: bevy::window::WindowResizeConstraints {
-                        min_width: 1100.,
-                        min_height: 760.,
+                        min_width: if cfg!(target_arch = "wasm32") {
+                            1.
+                        } else {
+                            1100.
+                        },
+                        min_height: if cfg!(target_arch = "wasm32") {
+                            1.
+                        } else {
+                            760.
+                        },
                         ..default()
                     },
                     ..default()
@@ -211,6 +219,11 @@ fn run(asset_dir: String, testbed: bool, save: PathBuf, load: Option<Case>) {
         app.init_resource::<testbed::Testbed>()
             .add_systems(Update, testbed::drive.after(ui::proximity));
     }
+    #[cfg(target_arch = "wasm32")]
+    app.add_systems(
+        PreUpdate,
+        browser::resize.before(bevy::ui::UiSystems::Focus),
+    );
     #[cfg(target_arch = "wasm32")]
     app.add_systems(
         PostUpdate,
@@ -287,6 +300,8 @@ fn setup(
             ..default()
         },
         IsDefaultUiCamera,
+        Msaa::Sample4,
+        bevy::ui_render::UiAntiAlias::On,
     ));
     let ring = meshes.add(Torus::new(0.23, 0.26));
     let material = mats.add(StandardMaterial {
@@ -313,8 +328,7 @@ fn viewport(
     window: Single<&Window, With<PrimaryWindow>>,
     mut camera: Single<&mut Camera, With<WorldCamera>>,
 ) {
-    let scale = window.scale_factor();
-    let width = ((window.width() - ui::SIDEBAR) * scale).max(1.) as u32;
+    let width = window.physical_width();
     let height = window.physical_height();
     let next = UVec2::new(width, height);
     if camera
@@ -339,6 +353,7 @@ fn input(
     mut acts: ResMut<Actions>,
     mut travel: ResMut<Travel>,
     player: Single<&Transform, With<Detective>>,
+    ui_scale: Res<UiScale>,
 ) {
     if keys.just_pressed(KeyCode::KeyM) {
         acts.0.push_back(Action::Sound);
@@ -390,7 +405,9 @@ fn input(
             }
             if game.0.modal == Modal::None && mouse.just_pressed(MouseButton::Left) {
                 if let Some(pos) = window.cursor_position().filter(|p| {
-                    p.x < window.width() - ui::SIDEBAR && p.y > 155. && p.y < window.height() - 155.
+                    p.x < window.width()
+                        && p.y > 155. * ui_scale.0
+                        && p.y < window.height() - 155. * ui_scale.0
                 }) {
                     if let Ok(ray) = camera.0.viewport_to_world(camera.1, pos) {
                         if let Some(distance) = ray

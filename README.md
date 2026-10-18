@@ -1,12 +1,12 @@
 # 오늘도, 너에게 · FindCat
 
-집을 나간 작은 고양이를 찾아, 고양이의 마음을 배우는 따뜻한 3D 추리 게임입니다. Rust / Bevy 0.17.3으로 만든 Windows / WebGL2 게임입니다. 한 동네에서 시작과 결말이 있는 짧은 싱글 플레이 이야기입니다.
+집을 나간 작은 고양이 **율**을 찾아, 고양이의 마음을 배우는 따뜻한 3D 추리 게임입니다. Rust / Bevy 0.17.3으로 만든 Windows / WebGL2 게임입니다. 한 동네에서 시작과 결말이 있는 짧은 싱글 플레이 이야기입니다.
 
 **[브라우저에서 플레이](https://edoli.github.io/FindCat/)** · [자동 배포 상태](https://github.com/edoli/FindCat/actions/workflows/pages.yml)
 
 ## 웹 실행과 배포
 
-WebGL2를 지원하는 최신 PC 브라우저에서 실행하세요. 첫 입력 후 소리가 켜지며, 진행 상황은 해당 브라우저의 로컬 저장소에 자동 저장됩니다. 브라우저 창이 작아지면 게임 화면 전체를 비율에 맞게 축소합니다.
+WebGL2를 지원하는 최신 PC 브라우저에서 실행하세요. 첫 입력 후 소리가 켜지며, 진행 상황은 해당 브라우저의 로컬 저장소에 자동 저장됩니다. 렌더링 해상도는 브라우저 창 크기 × 기기의 픽셀 배율(DPR)에 맞춥니다. 창 크기와 모니터 배율이 바뀌면 3D 화면과 글자도 해당 해상도로 다시 그립니다. UI 크기는 Bevy 안에서 조절하므로 완성된 캔버스를 CSS로 확대하지 않습니다. 글자는 grayscale antialiasing, 3D는 4× MSAA를 사용합니다.
 
 ```powershell
 rustup target add wasm32-unknown-unknown
@@ -16,7 +16,7 @@ trunk serve --release
 
 `http://127.0.0.1:8080`에서 플레이할 수 있습니다. 정적 웹 배포본은 `trunk build --release --locked --public-url /FindCat/`로 `dist/web`에 생성합니다. 이어서 `uv run --project python python python/web_licenses.py`로 의존성 고지문을 포함합니다. `.github/workflows/pages.yml`은 `main` push와 수동 실행 시 게임 규칙 테스트 → WASM 빌드 → GitHub Pages 배포를 수행합니다. Pages의 Source는 **GitHub Actions**입니다.
 
-웹 검증은 `uv run --project python python python/validate_web.py --url https://edoli.github.io/FindCat/`로 실행합니다. Playwright Chromium이 필요하며, `uv run --project python playwright install chromium`으로 설치합니다. OS 마우스와 키보드를 사용하지 않고 실제 브라우저 안에서 플레이합니다. `?testbed`는 검사에 필요한 상태와 버튼 좌표를 읽기 전용 DOM 속성으로 내보냅니다.
+웹 검증은 `uv run --project python python python/validate_web.py --url https://edoli.github.io/FindCat/`로 실행합니다. 해상도와 글자 검증은 `uv run --project python python python/validate_resolution.py --url https://edoli.github.io/FindCat/`로 실행합니다. 창 크기 변경, DPR 1 / 1.25 / 1.5 / 2, 실제 WebGL drawing buffer와 카메라 크기 일치, 글자 가장자리의 중간 계조, UI 범위와 클릭 위치를 확인합니다. Playwright Chromium이 필요하며, `uv run --project python playwright install chromium`으로 설치합니다. OS 마우스와 키보드를 사용하지 않고 실제 브라우저 안에서 플레이합니다. `?testbed`는 검사에 필요한 상태와 버튼 좌표를 읽기 전용 DOM 속성으로 내보냅니다.
 
 원본 `reference/cat` 사진은 저장소에 포함하지 않습니다. 배포에 필요한 모델과 가공된 고양이 사진은 `assets`에 포함되어 있습니다.
 

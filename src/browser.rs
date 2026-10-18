@@ -1,6 +1,57 @@
 //! Browser readiness and opt-in, read-only telemetry for hands-free release checks.
 use crate::*;
 use bevy::scene::SceneInstance;
+use bevy::text::FontSmoothing;
+
+/// Keep the GPU backbuffer, camera targets and glyph atlas at the actual display density.
+/// CSS only controls the surface's size; it never scales a previously rendered frame.
+pub fn resize(
+    mut window: Single<(Entity, &mut Window), With<PrimaryWindow>>,
+    mut ui_scale: ResMut<UiScale>,
+    mut resized: MessageWriter<bevy::window::WindowResized>,
+    mut scaled: MessageWriter<bevy::window::WindowScaleFactorChanged>,
+) {
+    let Some(browser) = web_sys::window() else {
+        return;
+    };
+    let width = browser
+        .inner_width()
+        .ok()
+        .and_then(|v| v.as_f64())
+        .unwrap_or(1440.)
+        .max(1.) as f32;
+    let height = browser
+        .inner_height()
+        .ok()
+        .and_then(|v| v.as_f64())
+        .unwrap_or(900.)
+        .max(1.) as f32;
+    let dpr = browser.device_pixel_ratio().max(0.1) as f32;
+    let size =
+        UVec2::new((width * dpr).round() as u32, (height * dpr).round() as u32).max(UVec2::ONE);
+    let (entity, window) = &mut *window;
+    let scale_changed = (window.scale_factor() - dpr).abs() > 0.001;
+    if window.physical_size() != size || scale_changed {
+        window.resolution.set_scale_factor_override(Some(dpr));
+        window.resolution.set_physical_resolution(size.x, size.y);
+        resized.write(bevy::window::WindowResized {
+            window: *entity,
+            width,
+            height,
+        });
+        if scale_changed {
+            scaled.write(bevy::window::WindowScaleFactorChanged {
+                window: *entity,
+                scale_factor: dpr as f64,
+            });
+        }
+    }
+    // Scale the layout before text rasterization, so fonts get native-resolution atlases.
+    let next = (width / 1440.).min(height / 900.);
+    if (ui_scale.0 - next).abs() > 0.0001 {
+        ui_scale.0 = next;
+    }
+}
 
 pub fn status(
     game: Res<Session>,
@@ -18,6 +69,9 @@ pub fn status(
     panels: Query<(&ui::UiPanel, &ComputedNode, &UiGlobalTransform)>,
     director: Res<presentation::Director>,
     window: Single<&Window, With<PrimaryWindow>>,
+    ui_scale: Res<UiScale>,
+    camera: Single<(&Camera, &Msaa), With<WorldCamera>>,
+    fonts: Query<(&TextFont, &Text, &ComputedNode, &UiGlobalTransform)>,
     mut ready: Local<bool>,
 ) {
     let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
@@ -70,8 +124,24 @@ pub fn status(
                 })
             })
             .collect();
+        let texts: Vec<_> = fonts
+            .iter()
+            .map(|(f, t, n, at)| {
+                serde_json::json!({
+                    "text":t.0,"font_size":f.font_size,
+                    "min":(at.translation-n.size()*0.5).to_array(),
+                    "max":(at.translation+n.size()*0.5).to_array(),
+                })
+            })
+            .collect();
         let state = serde_json::json!({"ready":*ready, "case":game.0,"modal":format!("{:?}",game.0.modal),"buttons":buttons,
+            "texts":texts,
             "panels":panels,"overview":director.overview,"camera_height":director.height,
+            "render":{"logical":window.size().to_array(),"physical":window.physical_size().to_array(),
+                "dpr":window.scale_factor(),"ui_scale":ui_scale.0,
+                "viewport":camera.0.physical_viewport_size().map(|s|s.to_array()),
+                "msaa":camera.1.samples(),
+                "text_antialiased":fonts.iter().all(|(f,_,_,_)|f.font_smoothing == FontSmoothing::AntiAliased)},
             "cat_scale":cat.iter().next().map(|t|t.scale.to_array())});
         let _ = root.set_attribute("data-findcat", &state.to_string());
     }

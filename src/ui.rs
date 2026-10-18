@@ -1,7 +1,6 @@
 use crate::*;
-use bevy::text::LineHeight;
+use bevy::text::{FontSmoothing, LineHeight};
 
-pub const SIDEBAR: f32 = 0.;
 const INK: Color = Color::srgb(0.09, 0.17, 0.15);
 const SECONDARY: Color = Color::srgb(0.28, 0.34, 0.30);
 const PAPER: Color = Color::srgb(0.99, 0.975, 0.94);
@@ -48,6 +47,7 @@ fn label(
             font: if bold { m.bold.clone() } else { m.font.clone() },
             font_size: size,
             line_height: LineHeight::RelativeToFont(1.4),
+            font_smoothing: FontSmoothing::AntiAliased,
             ..default()
         },
         TextColor(color),
@@ -185,12 +185,13 @@ pub fn rebuild(
     old: Query<Entity, With<UiRoot>>,
     mut last: Local<Option<(u64, u32, u32, bool, bool)>>,
     window: Single<&Window, With<PrimaryWindow>>,
+    ui_scale: Res<UiScale>,
 ) {
     let c = &game.0;
     let key = (
         c.revision,
-        window.width() as u32,
-        window.height() as u32,
+        (window.width() / ui_scale.0).round() as u32,
+        (window.height() / ui_scale.0).round() as u32,
         director.age > 3.,
         director.celebrate > 0.,
     );
@@ -201,8 +202,8 @@ pub fn rebuild(
     for e in &old {
         commands.entity(e).despawn();
     }
-    let w = window.width();
-    let h = window.height();
+    let w = window.width() / ui_scale.0;
+    let h = window.height() / ui_scale.0;
     commands
         .spawn((
             UiRoot,
@@ -222,7 +223,7 @@ pub fn rebuild(
                     if director.age > 3. {
                         ending(root, &media, c, h)
                     } else {
-                        caption(root, &media, "한 발, 또 한 발. 네가 스스로 다가왔다.");
+                        caption(root, &media, "율아, 기다려 줘서 고마워. 우리 집에 가자.");
                     }
                 }
             }
@@ -295,7 +296,7 @@ fn title(root: &mut ChildSpawnerCommands, m: &Media, saved: bool, h: f32) {
         label(
             p,
             m,
-            "작은 발자국을 따라,\n네 마음에 한 걸음 가까이.",
+            "율의 작은 발자국을 따라,\n네 마음에 한 걸음 가까이.",
             21.,
             INK,
             false,
@@ -364,7 +365,7 @@ fn story(root: &mut ChildSpawnerCommands, m: &Media, n: usize, w: f32) {
                 p,
                 m,
                 if n == 4 {
-                    "고양이를 찾으러 가기\n[Enter]"
+                    "율을 찾으러 가기\n[Enter]"
                 } else {
                     "다음 이야기  →\n[Enter]"
                 },
@@ -423,8 +424,8 @@ fn field_hud(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, w: f32, celeb
             [
                 "집 주변의 흔적을 모아\n첫 수색 범위를 추리하세요.",
                 "분수와 온실의 흔적을 연결해\n은신처를 추리하세요.",
-                "온실을 살펴보고,\n익숙한 담요를 찾아주세요.",
-                "온실로 돌아가\n아이를 안심시켜 주세요.",
+                "온실에서 율을 살펴보고,\n익숙한 담요를 찾아주세요.",
+                "온실로 돌아가\n율을 안심시켜 주세요.",
             ][c.chapter],
             18.,
             INK,
@@ -448,7 +449,7 @@ fn field_hud(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, w: f32, celeb
         photo(p, m, 54.);
         p.spawn(column(3.)).with_children(|p| {
             label(p, m, format!("단서  {} / 8", c.count()), 18., INK, true);
-            label(p, m, "우리 아이를 찾는 중", 14., SECONDARY, false);
+            label(p, m, format!("{CAT_NAME}을 찾는 중"), 14., SECONDARY, false);
         });
         button(p, m, "메뉴  [Esc]", Action::Pause, false);
     });
@@ -613,6 +614,7 @@ fn field_hud(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, w: f32, celeb
                     TextFont {
                         font: m.bold.clone(),
                         font_size: 16.,
+                        font_smoothing: FontSmoothing::AntiAliased,
                         ..default()
                     },
                     TextColor(PAPER),
@@ -901,9 +903,9 @@ fn rescue(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, h: f32) {
             p,
             m,
             [
-                "괜찮아, 여기서 기다릴게.",
+                "율아, 여기서 기다릴게.",
                 "집 냄새, 기억하고 있지?",
-                "네가 다가올 때까지.",
+                "율이 다가올 때까지.",
             ][c.trust.min(2)],
             if compact { 24. } else { 27. },
             INK,
@@ -920,7 +922,7 @@ fn rescue(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, h: f32) {
         rule(p);
         let choices = [
             [
-                "큰 소리로 이름을 부른다",
+                "큰 소리로 “율아!” 하고 부른다",
                 "거리를 두고 낮은 자세로 앉는다",
                 "잎사귀를 헤치고 손을 뻗는다",
             ],
@@ -1002,11 +1004,11 @@ fn ending(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, h: f32) {
     ))
     .with_children(|p| {
         label(p, m, "함께 돌아가는 길", 17., ACCENT, true);
-        label(p, m, "찾았다.\n우리, 집에 가자.", 38., INK, true);
+        label(p, m, "찾았다.\n율아, 집에 가자.", 38., INK, true);
         label(
             p,
             m,
-            "한 발, 또 한 발. 네가 스스로 다가왔다.\n작은 온기가 품 안을 채웠다.",
+            "한 발, 또 한 발. 율이 스스로 다가왔다.\n작은 온기가 품 안을 채웠다.",
             19.,
             INK,
             false,
@@ -1051,6 +1053,7 @@ pub fn markers(
     game: Res<Session>,
     director: Res<presentation::Director>,
     window: Single<&Window, With<PrimaryWindow>>,
+    ui_scale: Res<UiScale>,
 ) {
     let near = nearest(&player, &game.0);
     let mut used: Vec<Vec2> = vec![];
@@ -1069,11 +1072,13 @@ pub fn markers(
             camera.1,
             Vec3::new(clue.position[0], 0.45, clue.position[1]),
         ) {
+            // Camera projection is in window points; Node pixels include UiScale.
+            pos /= ui_scale.0;
             pos.y -= 34.;
             if pos.x < 30.
-                || pos.x > window.width() - 35.
+                || pos.x > window.width() / ui_scale.0 - 35.
                 || pos.y < 178.
-                || pos.y > window.height() - 210.
+                || pos.y > window.height() / ui_scale.0 - 210.
             {
                 continue;
             }

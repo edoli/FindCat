@@ -53,8 +53,9 @@ with sync_playwright() as p:
         wait(f"s.buttons.some(b => b.action === {json.dumps(action)})")
         button = next(b for b in state()['buttons'] if b['action'] == action)
         rect = page.locator('#game').bounding_box()
-        x = rect['x'] + button['x'] * rect['width'] / 1440
-        y = rect['y'] + button['y'] * rect['height'] / 900
+        logical = state().get('render', {}).get('logical', [1440,900])
+        x = rect['x'] + button['x'] * rect['width'] / logical[0]
+        y = rect['y'] + button['y'] * rect['height'] / logical[1]
         page.mouse.move(x, y)
         page.mouse.down()
         page.wait_for_timeout(100)
@@ -64,8 +65,9 @@ with sync_playwright() as p:
 
     def shot(name):
         page.wait_for_timeout(1800)
+        physical = state().get('render', {}).get('physical', [1440,900])
         for panel in state().get('panels', []):
-            assert min(panel['min']) >= -2 and panel['max'][0] <= 1442 and panel['max'][1] <= 902, panel
+            assert min(panel['min']) >= -2 and panel['max'][0] <= physical[0]+2 and panel['max'][1] <= physical[1]+2, panel
             assert not panel['overflow'], panel
         path = args.output / f'{name}.png'
         page.screenshot(path=str(path))
