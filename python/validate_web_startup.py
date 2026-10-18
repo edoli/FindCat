@@ -22,7 +22,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--url')
 parser.add_argument('--output', type=Path, default=ROOT / 'artifacts/web-startup')
 parser.add_argument('--chromium-only', action='store_true')
-parser.add_argument('--profile', choices=['desktop', 'android-tablet', 'ipad-webkit'])
+parser.add_argument('--profile', choices=['desktop', 'android-tablet', 'android-tablet-desktop', 'ipad-webkit'])
 parser.add_argument('--cached-archives', type=Path, help='Check old HTML against current deployment assets')
 args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=True)
@@ -58,6 +58,12 @@ try:
                 'screen': {'width': 1480, 'height': 924},
                 'device_scale_factor': 2, 'is_mobile': True, 'has_touch': True,
                 'user_agent': 'Mozilla/5.0 (Linux; Android 13; SM-X900) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36',
+            }),
+            ('android-tablet-desktop', p.chromium, {
+                'viewport': {'width': 1480, 'height': 924},
+                'screen': {'width': 1480, 'height': 924},
+                'device_scale_factor': 2, 'is_mobile': False, 'has_touch': True,
+                'user_agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36',
             }),
         ]
         if not args.chromium_only:
@@ -114,7 +120,7 @@ try:
                     # Chromium forbids a simulated window resize while fullscreen.
                     # Leave the first-touch fullscreen before emulating rotation.
                     page.evaluate("async () => { if (document.fullscreenElement) await document.exitFullscreen(); else if (document.webkitFullscreenElement) document.webkitExitFullscreen(); }")
-                    rotation = {'width': 924, 'height': 1480} if name == 'android-tablet' else {'width': 1194, 'height': 834}
+                    rotation = {'width': 924, 'height': 1480} if name.startswith('android-tablet') else {'width': 1194, 'height': 834}
                     page.set_viewport_size(rotation)
                     page.wait_for_function("width => Math.abs(JSON.parse(document.documentElement.getAttribute('data-findcat')).render.logical[0] - width) < 1", arg=rotation['width'], timeout=30000)
                 awaitable_errors = [e for e in errors if 'Using exceptions for control flow' not in e]

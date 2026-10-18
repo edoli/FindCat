@@ -40,7 +40,11 @@
     if (new URLSearchParams(location.search).has('testbed')) document.documentElement.setAttribute('data-testbed','');
     const mobile = navigator.userAgentData?.mobile === true
       || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
-      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+      // Android tablet desktop mode deliberately reports a Linux desktop UA.
+      // Detect its primary touch input without matching mouse-driven desktops.
+      || (/Linux/i.test(navigator.userAgent) && navigator.maxTouchPoints > 0
+          && matchMedia('(pointer: coarse)').matches);
     if (mobile) document.documentElement.setAttribute('data-mobile','');
     // Browsers suspend sound until a gesture. Resume the game's own contexts on input.
     const contexts = [];
