@@ -10,10 +10,12 @@ pub struct Director {
     pub target: Vec3,
     pub height: f32,
     pub yaw: f32,
+    pub shown_trust: usize,
     zoom: f32,
     phase: Phase,
     chapter: usize,
     found: [bool; 8],
+    bond_sound: Option<usize>,
 }
 impl Default for Director {
     fn default() -> Self {
@@ -24,10 +26,12 @@ impl Default for Director {
             target: Vec3::new(-5.35, 0.6, -0.5),
             height: 4.2,
             yaw: 0.18,
+            shown_trust: 0,
             zoom: 0.,
             phase: Phase::Title,
             chapter: 0,
             found: [false; 8],
+            bond_sound: None,
         }
     }
 }
@@ -55,11 +59,220 @@ pub struct LivingPart {
     kind: u8,
 }
 
+pub const ENDING_DURATION: f32 = 30.;
+
+pub fn intro_cat_position(bond: &Bonding) -> Vec3 {
+    let p = if bond.active { bond.progress() } else { 0. };
+    match bond.stage() {
+        0 => Vec3::new(
+            -4.35 + (p * std::f32::consts::TAU).sin() * 0.2,
+            0.15 + (p * std::f32::consts::PI).sin().powi(8) * 0.16,
+            -0.7 + (p * std::f32::consts::PI).sin() * 0.25,
+        ),
+        1 => Vec3::new(
+            -4.35 + smooth((p - 0.15) / 0.35) * 0.85 - smooth((p - 0.75) / 0.25) * 0.10,
+            0.15 + ((p - 0.30) / 0.25)
+                .clamp(0., 1.)
+                .mul_add(std::f32::consts::PI, 0.)
+                .sin()
+                * 0.20,
+            -0.7 + smooth(p / 0.7) * 0.3,
+        ),
+        _ => Vec3::new(-3.6 + (p * std::f32::consts::PI).sin() * 0.06, 0.15, -0.4),
+    }
+}
+
+pub fn ending_beat(age: f32) -> u8 {
+    if age < 6. {
+        0
+    } else if age < 15. {
+        1
+    } else if age < 22. {
+        2
+    } else {
+        3
+    }
+}
+
+fn smooth(value: f32) -> f32 {
+    let x = value.clamp(0., 1.);
+    x * x * (3. - 2. * x)
+}
+
+/// Fade the actual GLB materials; visibility also keeps absent characters from casting shadows.
+pub fn character_opacity(phase: &Phase, age: f32, fairy: bool) -> f32 {
+    if fairy {
+        match phase {
+            Phase::Title | Phase::Story(0..=2) => 0.,
+            Phase::Story(3) => smooth((age - 0.25) / 1.5),
+            Phase::Reunion => 1. - smooth((age - 5.) / 1.5),
+            _ => 1.,
+        }
+    } else {
+        match phase {
+            Phase::Story(1) => 1. - smooth((age - 0.65) / 0.85),
+            Phase::Story(2..) => 0.,
+            _ => 1.,
+        }
+    }
+}
+
+#[derive(Component)]
+pub struct FadingMaterial {
+    fairy: bool,
+    color: Color,
+    emissive: LinearRgba,
+    mode: AlphaMode,
+}
+
+pub fn fade_characters(
+    mut commands: Commands,
+    game: Res<Session>,
+    director: Res<Director>,
+    parents: Query<&ChildOf>,
+    roots: Query<Has<Fairy>, Or<(With<Cat>, With<Fairy>)>>,
+    mut meshes: Query<(
+        Entity,
+        &mut MeshMaterial3d<StandardMaterial>,
+        Option<&FadingMaterial>,
+    )>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    for (entity, mut handle, cached) in &mut meshes {
+        if let Some(fade) = cached {
+            let alpha = character_opacity(&game.0.phase, director.age, fade.fairy);
+            let color = fade.color.with_alpha(fade.color.alpha() * alpha);
+            let emissive = fade.emissive * alpha;
+            let mode = if alpha < 1. {
+                AlphaMode::Blend
+            } else {
+                fade.mode
+            };
+            // Avoid uploading all character materials every frame after a fade has finished.
+            let changed = materials.get(&handle.0).is_some_and(|material| {
+                material.base_color != color
+                    || material.emissive != emissive
+                    || material.alpha_mode != mode
+            });
+            if changed {
+                if let Some(material) = materials.get_mut(&handle.0) {
+                    material.base_color = color;
+                    material.emissive = emissive;
+                    material.alpha_mode = mode;
+                }
+            }
+        } else {
+            let Some(fairy) = parents
+                .iter_ancestors(entity)
+                .find_map(|e| roots.get(e).ok())
+            else {
+                continue;
+            };
+            let Some(mut material) = materials.get(&handle.0).cloned() else {
+                continue;
+            };
+            let fade = FadingMaterial {
+                fairy,
+                color: material.base_color,
+                emissive: material.emissive,
+                mode: material.alpha_mode,
+            };
+            let alpha = character_opacity(&game.0.phase, director.age, fairy);
+            material.base_color = material.base_color.with_alpha(fade.color.alpha() * alpha);
+            material.emissive *= alpha;
+            if alpha < 1. {
+                material.alpha_mode = AlphaMode::Blend;
+            }
+            handle.0 = materials.add(material);
+            commands.entity(entity).insert(fade);
+        }
+    }
+}
+
+#[derive(Component)]
+pub struct CozyProp;
+
+pub fn epilogue(
+    game: Res<Session>,
+    director: Res<Director>,
+    mut actions: ResMut<Actions>,
+    mut toys: Query<(&mut Transform, &mut Visibility), With<Toy>>,
+    mut props: Query<&mut Visibility, (With<CozyProp>, Without<Toy>)>,
+) {
+    let home = game.0.phase == Phase::Reunion && director.age >= 6.;
+    for mut vis in &mut props {
+        *vis = if home {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+    for (mut tr, mut vis) in &mut toys {
+        *vis = if matches!(game.0.phase, Phase::Title | Phase::Story(0))
+            || home && director.age < 15.
+        {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+        tr.translation = if game.0.phase == Phase::Story(0) {
+            let bond = &game.0.bonding;
+            let p = if bond.active { bond.progress() } else { 0. };
+            match bond.stage() {
+                0 => Vec3::new(
+                    -3.95 + (p * 12.).sin() * 0.22,
+                    0.3 + (p * 9.).sin().abs() * 0.10,
+                    -0.3,
+                ),
+                _ => Vec3::new(-4.2 + smooth(p / 0.55) * 0.85, 0.23, -0.3),
+            }
+        } else if home {
+            Vec3::new(
+                -4.0 + ((director.age - 6.) * 1.8 + 0.6).sin() * 0.5,
+                0.23,
+                -0.1,
+            )
+        } else {
+            Vec3::new(-3.8, 0.23, 0.)
+        };
+        if game.0.phase == Phase::Story(0) && game.0.bonding.stage() == 2 {
+            *vis = Visibility::Hidden;
+        }
+    }
+    if game.0.phase == Phase::Reunion
+        && game.0.modal == Modal::None
+        && director.age >= ENDING_DURATION
+    {
+        actions.0.push_back(Action::MainMenu);
+    }
+}
+
 pub fn populate(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    // A little familiar corner for the quiet afternoon after the rescue.
+    for (size, at, color) in [
+        (
+            Vec3::new(1.5, 0.035, 0.95),
+            Vec3::new(-3.9, 0.19, -0.2),
+            Color::srgb(0.76, 0.60, 0.43),
+        ),
+        (
+            Vec3::new(0.40, 0.12, 0.30),
+            Vec3::new(-4.45, 0.25, -0.38),
+            Color::srgb(0.90, 0.78, 0.58),
+        ),
+    ] {
+        commands.spawn((
+            Mesh3d(meshes.add(Cuboid::from_size(size))),
+            MeshMaterial3d(materials.add(color)),
+            Transform::from_translation(at),
+            CozyProp,
+            Visibility::Hidden,
+        ));
+    }
     let dot = meshes.add(Sphere::new(0.025));
     let gold = materials.add(StandardMaterial {
         base_color: Color::srgb(1., 0.73, 0.24),
@@ -214,15 +427,25 @@ pub fn direct(
     mut wheel: MessageReader<MouseWheel>,
     mut commands: Commands,
     effects: Res<Effects>,
+    assets: Res<AssetServer>,
 ) {
     let dt = time.delta_secs().min(0.05);
-    if d.phase != game.0.phase {
+    let entered = d.phase != game.0.phase;
+    let scene_started = d.age <= 0.
+        && game.0.scene_elapsed > 0.
+        && matches!(game.0.phase, Phase::Story(_) | Phase::Reunion);
+    if entered {
         d.phase = game.0.phase.clone();
         d.age = 0.;
         d.overview = false;
         d.zoom = 0.;
+        d.bond_sound = None;
     }
-    if game.0.modal != Modal::Pause {
+    if matches!(game.0.phase, Phase::Story(_) | Phase::Reunion) {
+        d.age = game.0.scene_elapsed;
+    } else if game.0.modal != Modal::Pause
+        && (game.0.phase != Phase::Reunion || game.0.modal == Modal::None)
+    {
         d.age += dt;
     }
     d.celebrate = (d.celebrate - dt).max(0.);
@@ -241,7 +464,37 @@ pub fn direct(
             );
         }
     }
-    if d.age < dt * 1.5 && game.0.phase == Phase::Reunion {
+    if !game.0.typing() {
+        d.shown_trust = game.0.trust;
+    }
+    if game.0.phase == Phase::Story(0)
+        && game.0.bonding.active
+        && game.0.bonding.elapsed > 0.
+        && d.bond_sound != Some(game.0.bonding.completed)
+    {
+        d.bond_sound = Some(game.0.bonding.completed);
+        if !game.0.muted {
+            commands.spawn((
+                AudioPlayer::new(assets.load("audio/meow.wav")),
+                PlaybackSettings::DESPAWN.with_volume(Volume::Linear(0.35)),
+            ));
+        }
+    }
+    if scene_started && !game.0.muted {
+        let sound = match game.0.phase {
+            Phase::Story(1) => Some("meow"),
+            Phase::Story(3) => Some("discover"),
+            Phase::Reunion => Some("reunion"),
+            _ => None,
+        };
+        if let Some(sound) = sound {
+            commands.spawn((
+                AudioPlayer::new(assets.load(format!("audio/{sound}.wav"))),
+                PlaybackSettings::DESPAWN.with_volume(Volume::Linear(0.35)),
+            ));
+        }
+    }
+    if scene_started && game.0.phase == Phase::Reunion {
         burst(
             &mut commands,
             &effects,
@@ -272,11 +525,18 @@ pub fn direct(
             4.2,
             0.18 + (time.elapsed_secs() * 0.13).sin() * 0.055,
         ),
-        Phase::Story(0) => (Vec3::new(-3.9, 0.52, -0.55), 3.8, 0.20),
+        Phase::Story(0) => {
+            let cuddling = game.0.bonding.stage() == 2;
+            (
+                Vec3::new(if cuddling { -3.5 } else { -3.9 }, 0.52, -0.55),
+                if cuddling { 3.2 } else { 3.8 },
+                0.20 + (time.elapsed_secs() * 0.2).sin() * 0.035,
+            )
+        }
         Phase::Story(1) => {
             let s = (d.age / 1.4).min(1.);
             (
-                Vec3::new(-4.2 + 1.2 * s, 0.55, -0.65 - 0.9 * s),
+                Vec3::new(-3.6 + 0.8 * s, 0.55, -0.4 - 1.2 * s),
                 5.4,
                 0.28 + 0.2 * s,
             )
@@ -305,11 +565,17 @@ pub fn direct(
             }
         }
         Phase::Reunion => {
-            let yaw: f32 = 0.18;
+            let yaw: f32 = 0.18 + smooth((d.age - 6.) / 16.) * 0.25;
             let right = Vec3::new(yaw.cos(), 0., -yaw.sin());
             (
                 player.translation + Vec3::new(0.4, 0.65, 0.3) - right * 1.05,
-                if d.age < 2.5 { 6.0 } else { 4.6 },
+                if d.age < 6. {
+                    6.0
+                } else if d.age < 22. {
+                    3.6
+                } else {
+                    4.6
+                },
                 yaw,
             )
         }
@@ -327,7 +593,7 @@ pub fn direct(
             target = Vec3::new(4.7, 0.40, 3.45) + Vec3::new(yaw.cos(), 0., -yaw.sin()) * 1.1;
             height = 4.4;
         }
-        Modal::Deduction | Modal::Journal => {
+        Modal::Deduction | Modal::Conclusion(_) | Modal::Journal => {
             target = Vec3::new(0., 0.4, 0.2);
             height = 18.;
             yaw = 0.47;
@@ -438,7 +704,7 @@ pub fn animate_parts(
             ]
             .iter()
             .any(|k| keys.pressed(*k)))
-        || game.0.phase == Phase::Reunion && director.age < 3.;
+        || game.0.phase == Phase::Reunion && director.age < 6.;
     let stride = if walking { (t * 11.).sin() * 0.36 } else { 0. };
     for (part, mut tr) in &mut parts {
         *tr = part.base;
@@ -452,22 +718,50 @@ pub fn animate_parts(
                 };
                 tr.scale.y *= blink;
             }
-            1 => tr.rotate_z((t * 0.7).sin() * 0.035),
-            2 => tr.rotate_y((t * 1.6).sin() * 0.20),
+            1 => {
+                let cuddling = game.0.phase == Phase::Story(0) && game.0.bonding.stage() == 2;
+                tr.rotate_z(
+                    (t * if cuddling { 2.4 } else { 0.7 }).sin()
+                        * if cuddling { 0.10 } else { 0.035 },
+                );
+            }
+            2 => tr.rotate_y(
+                (t * 1.6).sin()
+                    * if game.0.phase == Phase::Story(0) {
+                        0.35
+                    } else {
+                        0.20
+                    },
+            ),
             3 => tr.rotate_x(stride),
             4 => tr.rotate_x(-stride),
             5 | 6 => {
-                if game.0.phase == Phase::Story(2) {
+                if game.0.phase == Phase::Story(0) {
+                    let petting = game.0.bonding.stage() == 2
+                        && (game.0.bonding.active || game.0.bonding.ready())
+                        && !game.0.typing();
+                    if part.kind == 6 {
+                        tr.rotate_x(if petting { -1.0 } else { -0.55 });
+                        tr.rotate_z(if petting {
+                            0.4 + (t * 2.4).sin() * 0.12
+                        } else {
+                            (game.0.bonding.elapsed * 3.).sin() * 0.22
+                        });
+                    }
+                } else if game.0.phase == Phase::Story(2) && director.age > 0. {
                     tr.rotate_x(-1.9);
                     tr.rotate_z(if part.kind == 5 { 0.28 } else { -0.28 });
-                } else if game.0.phase == Phase::Story(4) && part.kind == 6 {
+                } else if game.0.phase == Phase::Story(4) && director.age > 0. && part.kind == 6 {
                     tr.rotate_z(0.7 + (t * 2.).sin() * 0.12);
+                } else if game.0.phase == Phase::Reunion && director.age >= 6. && part.kind == 6 {
+                    tr.rotate_x(-0.65);
+                    tr.rotate_z(0.35 + (t * 1.8).sin() * 0.10);
                 } else {
                     tr.rotate_x(if part.kind == 6 { stride } else { -stride });
                 }
             }
             7 => {
-                if game.0.phase == Phase::Story(2) {
+                if game.0.phase == Phase::Story(2) && director.age > 0. {
                     tr.rotate_x(0.20)
                 }
             }
@@ -487,8 +781,19 @@ pub fn ambience(
 ) {
     let t = time.elapsed_secs();
     let dt = time.delta_secs().min(0.05);
-    if game.0.phase == Phase::Reunion {
-        let at = Vec3::new(-3.4, 0.15, -0.6);
+    if game.0.phase == Phase::Story(0) {
+        let petting = game.0.bonding.stage() == 2;
+        player.translation.y +=
+            ((if petting { 0.03 } else { 0.15 }) - player.translation.y) * (1. - (-dt * 3.).exp());
+        player.rotation = player.rotation.slerp(
+            Quat::from_rotation_y(if petting { -1.0 } else { -0.6 }),
+            1. - (-dt * 3.).exp(),
+        );
+    } else if matches!(game.0.phase, Phase::Story(_)) {
+        player.translation.y += (0.15 - player.translation.y) * (1. - (-dt * 3.).exp());
+    }
+    if game.0.phase == Phase::Reunion && !game.0.typing() {
+        let at = Vec3::new(-3.4, if director.age >= 15. { 0.03 } else { 0.15 }, -0.6);
         player.translation = player.translation.lerp(at, 1. - (-dt * 0.9).exp());
         let facing = if player.translation.distance(at) > 0.15 {
             -1.9
@@ -558,7 +863,7 @@ pub fn ambience(
                 }
             }
             6 => {
-                if game.0.phase == Phase::Story(2) {
+                if game.0.phase == Phase::Story(2) && director.age > 0. {
                     let u = (t * 1.5 + d.seed * 0.2).fract().abs();
                     tr.translation =
                         player.translation + Vec3::new(d.seed * 0.065, 0.81 - u * 0.17, 0.17);

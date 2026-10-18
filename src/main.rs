@@ -46,11 +46,11 @@ pub struct Cat;
 #[derive(Component)]
 pub struct Fairy;
 #[derive(Component)]
+pub struct Toy;
+#[derive(Component)]
 pub struct WorldCamera;
 #[derive(Component)]
 pub struct Music;
-#[derive(Resource, Default)]
-pub struct ToyMoment(pub f32);
 #[derive(Component)]
 pub struct Beacon(pub usize);
 #[derive(Resource)]
@@ -129,7 +129,6 @@ fn run(asset_dir: String, testbed: bool, save: PathBuf, load: Option<Case>) {
     .init_resource::<Session>()
     .init_resource::<Actions>()
     .init_resource::<Travel>()
-    .init_resource::<ToyMoment>()
     .init_resource::<presentation::Director>()
     .init_resource::<typography::Coverage>()
     .add_plugins(
@@ -189,18 +188,23 @@ fn run(asset_dir: String, testbed: bool, save: PathBuf, load: Option<Case>) {
     .add_systems(
         Update,
         (
+            bonding,
             input,
+            ui::scroll_evidence,
             typography::prepare_light_font,
             ui::buttons,
             actions,
             movement,
-            animate,
             presentation::direct,
+            animate,
+            presentation::fade_characters,
             presentation::rig_parts,
             presentation::animate_parts,
             presentation::ambience,
+            presentation::epilogue,
             presentation::music,
             ui::rebuild,
+            ui::reveal_dialogue,
             ui::proximity,
         )
             .chain(),
@@ -219,6 +223,8 @@ fn run(asset_dir: String, testbed: bool, save: PathBuf, load: Option<Case>) {
                 .after(bevy::transform::TransformSystems::Propagate),
         ),
     );
+    #[cfg(not(target_arch = "wasm32"))]
+    app.add_systems(Update, typography::align_desktop_text.after(ui::rebuild));
     #[cfg(not(target_arch = "wasm32"))]
     app.add_systems(Update, screenshots);
     #[cfg(not(target_arch = "wasm32"))]
@@ -270,11 +276,13 @@ fn setup(
         Mesh3d(meshes.add(Sphere::new(0.07))),
         MeshMaterial3d(mats.add(Color::srgb(0.95, 0.62, 0.28))),
         Transform::from_xyz(-3.8, 0.23, 0.0),
+        Toy,
     ));
     commands.spawn((
         SceneRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("models/fairy.glb"))),
         Transform::from_xyz(-2., 1.7, -0.3),
         Fairy,
+        Visibility::Hidden,
     ));
     commands.spawn((
         DirectionalLight {
@@ -353,6 +361,10 @@ fn viewport(
     }
 }
 
+fn bonding(time: Res<Time<Real>>, mut game: ResMut<Session>) {
+    game.0.tick(time.delta_secs().min(0.1));
+}
+
 fn input(
     keys: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
@@ -373,6 +385,13 @@ fn input(
     if keys.just_pressed(KeyCode::F1) {
         acts.0.push_back(Action::Help);
     }
+    if game.0.typing() {
+        if keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::Space) {
+            acts.0.push_back(Action::FinishDialogue);
+        }
+        // Consume this input: revealing a line never also advances or selects an action.
+        return;
+    }
     match game.0.phase {
         Phase::Title if game.0.modal == Modal::None => {
             if keys.just_pressed(KeyCode::Enter) {
@@ -384,7 +403,7 @@ fn input(
                 acts.0.push_back(Action::Play);
             }
             if keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::Space) {
-                if n != 0 || keys.just_pressed(KeyCode::Enter) {
+                if game.0.story_ready() && (n != 0 || keys.just_pressed(KeyCode::Enter)) {
                     acts.0.push_back(Action::Next);
                 }
             }
@@ -403,6 +422,7 @@ fn input(
                 if let Some(i) = nearest(&player, &game.0) {
                     if i == 5 && game.0.chapter == 3 {
                         game.0.modal = Modal::Rescue;
+                        game.0.sync_dialogue();
                         game.0.revision += 1;
                     } else {
                         acts.0.push_back(Action::Inspect(i));
@@ -469,24 +489,33 @@ fn actions(
     mut player: Single<&mut Transform, With<Detective>>,
     assets: Res<AssetServer>,
     mut music: Query<&mut AudioSink, With<Music>>,
-    time: Res<Time>,
-    mut toy: ResMut<ToyMoment>,
 ) {
     while let Some(action) = acts.0.pop_front() {
-        let playing = matches!(action, Action::Play) && game.0.phase == Phase::Story(0);
-        if playing {
-            toy.0 = time.elapsed_secs() + 0.9;
+        game.0.sync_dialogue();
+        if matches!(action, Action::FinishDialogue) {
+            game.0.apply(action);
+            continue;
         }
-        if matches!(action, Action::Start | Action::Restart) {
+        if game.0.typing() && !matches!(action, Action::Help | Action::Pause | Action::Sound) {
+            game.0.apply(Action::FinishDialogue);
+            continue;
+        }
+        if matches!(action, Action::Play) && !game.0.can_play() {
+            continue;
+        }
+        if matches!(action, Action::Start | Action::Restart | Action::MainMenu) {
             travel.path.clear();
             travel.inspect = None;
             player.translation = Vec3::new(-3., 0.15, -0.7);
+            player.rotation = Quat::IDENTITY;
         }
         if matches!(action, Action::Continue) {
             if let Some(saved) = files.load.clone() {
                 game.0 = saved;
                 game.0.revision += 1;
                 game.0.message = "모리 · 다시 왔구나. 수첩 속 흔적부터 이어 가자.".into();
+                game.0.scene_elapsed = 0.;
+                game.0.sync_dialogue();
                 for mut sink in &mut music {
                     sink.set_volume(Volume::Linear(if game.0.muted { 0. } else { 0.26 }));
                 }
@@ -515,23 +544,15 @@ fn actions(
             }
             if id == 5 && game.0.chapter == 3 && !reading_notebook {
                 game.0.modal = Modal::Rescue;
+                game.0.sync_dialogue();
                 game.0.revision += 1;
                 continue;
             }
         }
         let chapter = game.0.chapter;
         let count = game.0.count();
-        let phase = game.0.phase.clone();
         game.0.apply(action);
-        let sound = if playing {
-            "meow"
-        } else if phase == Phase::Story(0) && game.0.phase == Phase::Story(1) {
-            "meow"
-        } else if phase == Phase::Story(2) && game.0.phase == Phase::Story(3) {
-            "discover"
-        } else if game.0.phase == Phase::Reunion && phase != Phase::Reunion {
-            "reunion"
-        } else if game.0.chapter > chapter {
+        let sound = if game.0.chapter > chapter {
             "deduce"
         } else if game.0.count() > count {
             "discover"
@@ -654,14 +675,16 @@ fn movement(
 
 fn animate(
     time: Res<Time>,
-    toy: Res<ToyMoment>,
     game: Res<Session>,
     director: Res<presentation::Director>,
     mut cats: Query<
         (&mut Transform, &mut Visibility),
         (With<Cat>, Without<Detective>, Without<Fairy>),
     >,
-    mut fairies: Query<&mut Transform, (With<Fairy>, Without<Cat>, Without<Detective>)>,
+    mut fairies: Query<
+        (&mut Transform, &mut Visibility),
+        (With<Fairy>, Without<Cat>, Without<Detective>),
+    >,
     player: Single<&Transform, With<Detective>>,
     mut beacons: Query<
         (&Beacon, &mut Transform, &mut Visibility),
@@ -673,23 +696,33 @@ fn animate(
         *vis = Visibility::Visible;
         c.scale = Vec3::splat(CAT_SCALE);
         match game.0.phase {
-            Phase::Title | Phase::Story(0) => {
+            Phase::Title => {
                 c.translation = Vec3::new(-4.35, 0.15, -0.7);
-                if toy.0 > t {
-                    c.translation.y += ((toy.0 - t) / 0.9 * std::f32::consts::PI).sin() * 0.25;
-                }
                 c.rotation = Quat::from_rotation_y(0.12 + (t * 0.5).sin() * 0.07);
                 c.scale *= 1. + (t * 2.).sin() * 0.009;
+            }
+            Phase::Story(0) => {
+                let bond = &game.0.bonding;
+                c.translation = presentation::intro_cat_position(bond);
+                c.rotation = Quat::from_rotation_y(if bond.stage() == 2 {
+                    1.2
+                } else {
+                    0.3 + (bond.elapsed * 2.).sin() * 0.25
+                });
+                c.scale *= 1. + (t * 2.).sin() * 0.009;
+                if bond.stage() == 2 {
+                    c.scale.y *= 0.92;
+                }
             }
             Phase::Story(1) => {
                 let s = (director.age / 1.3).clamp(0., 1.);
                 c.translation = Vec3::new(
-                    -4.35 + 2.1 * s,
+                    -3.6 + 1.35 * s,
                     0.15 + (s * 18.).sin().abs() * 0.09,
-                    -0.7 - 1.1 * s,
+                    -0.4 - 1.4 * s,
                 );
                 c.rotation = Quat::from_rotation_y(1.6);
-                if director.age > 1.8 {
+                if presentation::character_opacity(&game.0.phase, director.age, false) <= 0. {
                     *vis = Visibility::Hidden;
                 }
             }
@@ -701,21 +734,47 @@ fn animate(
                     c.translation = Vec3::new(4.7, 0.17, 3.25);
                     c.rotation = Quat::from_rotation_y(0.10);
                     c.scale.y *= 0.88 + (t * 2.).sin() * 0.008;
-                    if game.0.trust > 0 {
-                        c.translation.z += game.0.trust as f32 * 0.22;
+                    if director.shown_trust > 0 {
+                        c.translation.z += director.shown_trust as f32 * 0.22;
                         c.scale.y = CAT_SCALE;
                     }
                 }
             }
             Phase::Reunion => {
-                let target = player.translation + Vec3::new(0.5, 0., 0.4);
-                c.translation = c.translation.lerp(target, 0.025);
-                c.rotation = Quat::from_rotation_y(-0.3 + (t * 0.7).sin() * 0.25);
+                let age = director.age;
+                let target = if age < 6. {
+                    player.translation + Vec3::new(0.5, 0., 0.4)
+                } else if age < 15. {
+                    Vec3::new(-4.0 + ((age - 6.) * 1.8).sin() * 0.4, 0.15, -0.2)
+                } else {
+                    Vec3::new(-3.85, 0.15, -0.25)
+                };
+                c.translation = c.translation.lerp(
+                    target,
+                    if game.0.typing() {
+                        0.
+                    } else {
+                        1. - (-time.delta_secs().min(0.05) * 4.).exp()
+                    },
+                );
+                c.rotation = Quat::from_rotation_y(if (6.0..15.0).contains(&age) {
+                    ((age - 6.) * 1.8).cos() * 1.1
+                } else {
+                    -0.3 + (t * 0.7).sin() * 0.12
+                });
+                if age >= 15. {
+                    c.scale.y *= 0.80;
+                }
                 c.scale *= 1. + (t * 3.).sin() * 0.013;
             }
         }
     }
-    for mut f in &mut fairies {
+    for (mut f, mut vis) in &mut fairies {
+        *vis = if presentation::character_opacity(&game.0.phase, director.age, true) > 0. {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
         let mut at = player.translation + Vec3::new(0.65, 1.65, -0.35);
         if game.0.hints > 0 && game.0.chapter < 3 && game.0.modal == Modal::None {
             if let Some(id) = PAIRS[game.0.chapter].iter().find(|id| !game.0.found[**id]) {

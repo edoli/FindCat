@@ -4,6 +4,35 @@ use crate::*;
 use bevy::{asset::AssetId, text::TextLayoutInfo};
 use std::collections::HashSet;
 
+/// Preserve the design size while desktop DPI changes (for example, Windows 125% / 150%).
+/// The web keeps its existing rasterization and responsive sizing.
+#[derive(Component)]
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+pub struct LogicalTextMetrics {
+    pub size: f32,
+    pub line_height: f32,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn align_desktop_text(
+    window: Single<&Window, With<PrimaryWindow>>,
+    ui_scale: Res<UiScale>,
+    mut text: Query<(&LogicalTextMetrics, &mut TextFont)>,
+) {
+    let scale = (window.scale_factor() * ui_scale.0).max(0.1);
+    for (metrics, mut font) in &mut text {
+        // Rasterize whole physical pixels, rather than e.g. a 25.5 px glyph at 150%.
+        // Convert back to logical UI units so layout still follows the monitor DPI.
+        let size = (metrics.size * scale).round().max(1.) / scale;
+        let line_height =
+            bevy::text::LineHeight::Px((metrics.line_height * scale).round().max(1.) / scale);
+        if (font.font_size - size).abs() > 0.0001 || font.line_height != line_height {
+            font.font_size = size;
+            font.line_height = line_height;
+        }
+    }
+}
+
 #[derive(Resource)]
 pub struct Coverage {
     processed: HashSet<(AssetId<Image>, usize)>,

@@ -108,6 +108,10 @@ pub fn drive(
         t.ui_checks += 1;
     }
     let mut done = false;
+    if c.typing() {
+        acts.0.push_back(Action::FinishDialogue);
+        return;
+    }
     match t.step {
         0 => {
             if t.started.elapsed().as_secs_f32() > 7. {
@@ -118,7 +122,16 @@ pub fn drive(
             }
         }
         1..=4 => {
+            if t.step > 1 && !c.story_ready() {
+                return;
+            }
             if t.step == 1 {
+                if !c.bonding.ready() {
+                    if c.can_play() {
+                        acts.0.push_back(Action::Play);
+                    }
+                    return;
+                }
                 shot(&mut commands, &mut t, "09-play");
             }
             if t.step == 2 {
@@ -139,6 +152,9 @@ pub fn drive(
             done = true;
         }
         5 => {
+            if !c.story_ready() {
+                return;
+            }
             shot(&mut commands, &mut t, "02-story");
             acts.0.push_back(Action::Next);
             done = true;
@@ -253,6 +269,9 @@ pub fn drive(
                 shot(&mut commands, &mut t, "15-small-deduction");
             }
             acts.0.push_back(Action::Theory(CORRECT[c.chapter]));
+            // The new explanation card is acknowledged before resuming the route.
+            acts.0.push_back(Action::FinishDialogue);
+            acts.0.push_back(Action::Close);
             done = true;
         }
         26 => {

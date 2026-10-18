@@ -1,8 +1,43 @@
+use crate::dialogue::Dialogue;
 use serde::{Deserialize, Serialize};
 
 pub const TITLE: &str = "오늘도, 너에게";
 pub const SUBTITLE: &str = "A LITTLE CAT DETECTIVE STORY";
 pub const CAT_NAME: &str = "율";
+pub const REUNION_LINES: [&str; 3] = [
+    "율아, 기다려 줘서 고마워. 우리 집에 가자.",
+    "“율아, 잡아 봐!” 다시 장난감을 쫓는 작은 앞발. 우리의 오후가 돌아왔다.",
+    "익숙한 담요 위, 내 곁에 누운 율. 오늘은 네가 먼저 눈을 감을 때까지 함께 있을게.",
+];
+pub const BOND_DURATIONS: [f32; 3] = [4.0, 4.0, 4.5];
+pub const BOND_ACTIONS: [&str; 3] = [
+    "장난감 살살 흔들기",
+    "율에게 공 굴려 주기",
+    "가까이 앉아 쓰다듬기",
+];
+pub const BOND_REACTIONS: [&str; 3] = [
+    "장난감 끝을 따라 고개를 갸웃하던 율. 작은 앞발로 톡 잡고는 나를 올려다본다.\n“잘 잡네, 율아. 이번엔 공으로 놀까?”",
+    "데굴데굴, 공을 따라 폴짝! 공을 붙잡은 율이 내 쪽으로 돌아온다.\n“재미있었어? 이제 잠깐 쉬자. 네가 먼저 다가올 때까지 기다릴게.”",
+    "율이 먼저 다가와 손에 이마를 부빈다. 가만히 쓰다듬자 작은 골골송이 들린다.\n“나도 좋아, 율아. 너랑 보내는 이 시간이.”",
+];
+
+#[derive(Clone, Debug, Default)]
+pub struct Bonding {
+    pub completed: usize,
+    pub active: bool,
+    pub elapsed: f32,
+}
+impl Bonding {
+    pub fn stage(&self) -> usize {
+        self.completed.min(2)
+    }
+    pub fn progress(&self) -> f32 {
+        (self.elapsed / BOND_DURATIONS[self.stage()]).clamp(0., 1.)
+    }
+    pub fn ready(&self) -> bool {
+        self.completed >= 3
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Clue {
@@ -120,6 +155,21 @@ pub const THEORIES: [[&str; 3]; 3] = [
 pub const CORRECT: [usize; 3] = [1, 2, 0];
 pub const PAIRS: [[usize; 2]; 3] = [[0, 1], [4, 7], [5, 6]];
 
+#[derive(Clone, Debug, Default)]
+pub struct EvidenceView {
+    pub preview: Option<usize>,
+}
+pub const CONNECTIONS: [&str; 3] = [
+    "문 앞에 율의 털이 남아 있고, 발자국은 화분과 담장 안쪽으로 이어져요. 멀리 갔다고 단정하기보다 출구 가까운 가려진 곳부터 살펴볼 근거가 돼요.",
+    "발자국과 크림빛 털은 분수에서 온실 쪽으로 이어져요. 그 방향에 비를 피할 수 있는 낮고 어두운 틈도 있어요. 이동 방향과 은신처의 조건이 온실에서 만나요.",
+    "몸을 낮추고 귀를 뒤로 젖힌 율은 아직 겁먹은 모습이에요. 율이 쓰던 담요의 익숙한 냄새로 안심할 공간을 만들고, 스스로 다가올 시간을 주면 돼요.",
+];
+pub const NEXT_STEPS: [&str; 3] = [
+    "분수의 이동 흔적과 온실 옆 환경을 살펴보세요. 모리의 빛 [Q]가 아직 못 찾은 흔적을 안내해요.",
+    "온실 아래를 조사해 율의 모습을 관찰하고, 집 앞 빨랫줄의 담요를 챙겨 주세요.",
+    "온실로 돌아가 [E]를 누르세요. 낮은 자세, 익숙한 담요, 조용한 기다림으로 율에게 마음을 전해요.",
+];
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum Phase {
     Title,
@@ -134,6 +184,7 @@ pub enum Modal {
     Clue(usize),
     Journal,
     Deduction,
+    Conclusion(usize),
     Rescue,
     Help,
     Pause,
@@ -149,12 +200,15 @@ pub enum Action {
     Journal,
     Deduce,
     Select(usize),
+    ViewClue(usize),
     Theory(usize),
     Rescue(usize),
     Hint,
     Help,
     Pause,
     Restart,
+    MainMenu,
+    FinishDialogue,
     Sound,
 }
 
@@ -168,9 +222,17 @@ pub struct Case {
     pub hints: usize,
     pub muted: bool,
     #[serde(skip)]
+    pub bonding: Bonding,
+    #[serde(skip)]
+    pub dialogue: Dialogue,
+    #[serde(skip)]
+    pub scene_elapsed: f32,
+    #[serde(skip)]
     pub modal: Modal,
     #[serde(skip)]
     pub selected: Vec<usize>,
+    #[serde(skip)]
+    pub evidence: EvidenceView,
     #[serde(skip)]
     pub message: String,
     #[serde(skip)]
@@ -187,8 +249,12 @@ impl Default for Case {
             mistakes: 0,
             hints: 0,
             muted: false,
+            bonding: Bonding::default(),
+            dialogue: Dialogue::default(),
+            scene_elapsed: 0.,
             modal: Modal::None,
             selected: vec![],
+            evidence: EvidenceView::default(),
             message: "모리 · 작은 흔적에도 마음이 담겨 있어. 천천히 살펴보자.".into(),
             revision: 0,
         }
@@ -196,6 +262,103 @@ impl Default for Case {
 }
 
 impl Case {
+    pub fn reunion_beat(&self) -> usize {
+        if self.scene_elapsed < 6. {
+            0
+        } else if self.scene_elapsed < 15. {
+            1
+        } else if self.scene_elapsed < 22. {
+            2
+        } else {
+            3
+        }
+    }
+    pub fn dialogue_text(&self) -> Option<&str> {
+        match self.modal {
+            Modal::Clue(id) => Some(CLUES[id].detail),
+            Modal::Rescue => Some(&self.message),
+            Modal::Conclusion(chapter) => Some(CONNECTIONS[chapter]),
+            Modal::Deduction if !self.message.is_empty() => Some(&self.message),
+            Modal::None => match self.phase {
+                Phase::Story(0) => Some(&self.message),
+                Phase::Story(n) => Some(STORY[n].1),
+                Phase::Reunion => REUNION_LINES.get(self.reunion_beat()).copied(),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    pub fn sync_dialogue(&mut self) {
+        // Opening a menu pauses a line; closing it resumes that same line.
+        if matches!(self.modal, Modal::Pause | Modal::Help) {
+            return;
+        }
+        let text = self.dialogue_text().unwrap_or("").to_owned();
+        self.dialogue.set_text(&text);
+    }
+    pub fn typing(&self) -> bool {
+        self.dialogue_text().is_some() && self.dialogue.typing()
+    }
+    pub fn story_ready(&self) -> bool {
+        !self.typing()
+            && match self.phase {
+                Phase::Story(0) => self.bonding.ready(),
+                Phase::Story(1) => self.scene_elapsed >= 1.8,
+                Phase::Story(2) => self.scene_elapsed >= 1.0,
+                Phase::Story(3) => self.scene_elapsed >= 1.8,
+                Phase::Story(4) => self.scene_elapsed >= 1.2,
+                _ => false,
+            }
+    }
+    pub fn tick(&mut self, seconds: f32) {
+        self.sync_dialogue();
+        if matches!(self.modal, Modal::Pause | Modal::Help) {
+            return;
+        }
+        let typing = self.typing();
+        self.dialogue.tick(seconds);
+        if typing {
+            if !self.typing() {
+                self.revision = self.revision.wrapping_add(1);
+            }
+            // A completed line releases scene actions on the following frame.
+            return;
+        }
+        let ready = self.story_ready();
+        if self.modal == Modal::None && matches!(self.phase, Phase::Story(_) | Phase::Reunion) {
+            self.scene_elapsed += seconds;
+        }
+        self.tick_bonding(seconds);
+        self.sync_dialogue();
+        if ready != self.story_ready() {
+            self.revision = self.revision.wrapping_add(1);
+        }
+    }
+    pub fn can_play(&self) -> bool {
+        self.phase == Phase::Story(0)
+            && self.modal == Modal::None
+            && !self.bonding.active
+            && !self.bonding.ready()
+            && !self.typing()
+    }
+    pub fn tick_bonding(&mut self, seconds: f32) {
+        if self.phase != Phase::Story(0)
+            || self.modal != Modal::None
+            || !self.bonding.active
+            || self.typing()
+        {
+            return;
+        }
+        self.bonding.elapsed += seconds.max(0.);
+        if self.bonding.elapsed >= BOND_DURATIONS[self.bonding.stage()] {
+            self.bonding.active = false;
+            self.message = BOND_REACTIONS[self.bonding.stage()].into();
+            self.bonding.completed += 1;
+            self.bonding.elapsed = 0.;
+            self.revision = self.revision.wrapping_add(1);
+            self.sync_dialogue();
+        }
+    }
     pub fn count(&self) -> usize {
         self.found.iter().filter(|v| **v).count()
     }
@@ -215,16 +378,41 @@ impl Case {
         }
     }
     pub fn apply(&mut self, action: Action) {
+        self.sync_dialogue();
+        if self.typing()
+            && !matches!(
+                action,
+                Action::FinishDialogue | Action::Help | Action::Pause | Action::Sound
+            )
+        {
+            self.dialogue.finish();
+            self.revision = self.revision.wrapping_add(1);
+            return;
+        }
+        let phase = self.phase.clone();
         match action {
-            Action::Play if self.phase == Phase::Story(0) => {
-                self.message = "장난감에 율의 앞발이 쏙. 작은 발끝이 내 하루를 간질인다.".into();
+            Action::FinishDialogue => self.dialogue.finish(),
+            Action::Play if self.can_play() => {
+                self.bonding.active = true;
+                self.bonding.elapsed = 0.;
+                self.message = [
+                    "“율아, 여기 봐.” 장난감을 천천히 흔들자 호박색 눈이 반짝인다.\n서두르지 않고, 율이 앞발을 뻗을 때까지 함께 놀아 준다.",
+                    "작은 공을 살며시 굴렸다. 율이 몸을 낮추고 엉덩이를 씰룩인다.\n“준비… 됐어? 잡아 봐!”",
+                    "놀이를 마치고 손을 낮게 내밀었다. 율이 먼저 다가온다.\n부드럽게 이마를 쓰다듬으며, 함께 숨을 고른다.",
+                ][self.bonding.stage()].into();
             }
             Action::Start if self.phase == Phase::Title => {
                 self.phase = Phase::Story(0);
                 self.modal = Modal::None;
+                self.bonding = Bonding::default();
+                self.message = "“율아, 같이 놀까?” 먼저 장난감을 천천히 흔들어 보자.\n[Space] 또는 오른쪽 위 놀이 버튼으로 율에게 말을 걸어 주세요.".into();
             }
             Action::Next => {
                 if let Phase::Story(n) = self.phase {
+                    // Guard the story itself, so Enter and queued actions cannot skip bonding.
+                    if !self.story_ready() {
+                        return;
+                    }
                     if n < 4 {
                         self.phase = Phase::Story(n + 1)
                     } else {
@@ -252,14 +440,28 @@ impl Case {
             Action::Deduce if self.phase == Phase::Search && self.chapter < 3 => {
                 self.modal = Modal::Deduction;
                 self.selected.clear();
-                self.message =
-                    "수첩에서 서로 연결되는 단서 두 개를 고르고, 추리를 선택하세요.".into();
+                self.message.clear();
+                self.evidence = EvidenceView {
+                    preview: self.found.iter().position(|found| *found),
+                    ..Default::default()
+                };
+            }
+            Action::ViewClue(id)
+                if self.modal == Modal::Deduction && id < CLUES.len() && self.found[id] =>
+            {
+                self.evidence.preview = Some(id);
+                self.message.clear();
             }
             Action::Select(id) if self.modal == Modal::Deduction && id < 8 && self.found[id] => {
+                self.message.clear();
                 if self.selected.contains(&id) {
                     self.selected.retain(|i| *i != id)
                 } else if self.selected.len() < 2 {
                     self.selected.push(id)
+                } else {
+                    self.message =
+                        "모리 · 이미 두 단서를 골랐어. 바꾸려면 선택한 단서 중 하나를 먼저 빼 줘."
+                            .into();
                 }
             }
             Action::Theory(answer) if self.modal == Modal::Deduction && self.chapter < 3 => {
@@ -268,15 +470,32 @@ impl Case {
                     self.message = "모리 · 먼저 이 추리를 뒷받침할 단서 두 개를 골라 줘.".into();
                 } else if !pair.iter().all(|i| self.selected.contains(i)) {
                     self.mistakes += 1;
-                    self.message=match self.chapter {0=>"모리 · 문틈의 털과 화분 뒤 발자국을 함께 보면 율이 어디로 갔는지 알 수 있어.",1=>"모리 · 물가에서 돌아선 흔적과 바람 종 근처의 환경을 연결해 봐.",_=>"모리 · 숨어 있는 율의 모습과 집 냄새가 나는 물건을 연결해 봐."}.into();
+                    self.message = if self.selected.contains(&3) {
+                        "모리 · 상자에 남은 털색이 율의 털색과 같은지 다시 비교해 봐. 고양이의 흔적이라고 모두 율의 것은 아니야."
+                    } else { match self.chapter {
+                        0 => "모리 · 두 단서가 탈출 직후의 위치와 이동 방식을 함께 뒷받침하는지 살펴봐. 목격된 장소만으로 수색 범위를 단정하기는 어려워.",
+                        1 => "모리 · 어느 방향으로 이동했는지와 그곳이 숨기에 알맞은지를 함께 설명할 근거가 필요해. 관찰 기록과 주변 환경을 비교해 봐.",
+                        _ => "모리 · 지금 율이 보내는 신호와 안심할 수 있는 방법을 연결해 봐. 예전의 이동 흔적만으로 지금의 마음을 알 수는 없어.",
+                    }}.into();
                 } else if answer != CORRECT[self.chapter] {
                     self.mistakes += 1;
-                    self.message="모리 · 고양이의 눈높이에서 다시 생각해 봐. 무서울 때는 조용히 몸을 숨기고, 안전하다고 느껴야 다가올 수 있어.".into();
+                    self.message = format!(
+                        "모리 · {}",
+                        match self.chapter {
+                            0 =>
+                                "큰길이나 지붕으로 향한 흔적은 없어요. 문 앞의 털과 화분 안쪽 발자국이 함께 가리키는 수색 범위를 골라 봐요.",
+                            1 =>
+                                "분수에서는 돌아섰고, 빵집 입구로 이어진 흔적도 없어요. 발자국의 방향과 몸을 가릴 공간이 모두 맞는 곳은 어디일까요?",
+                            _ =>
+                                "지금 달려가거나 출구를 막으면 겁먹은 율이 더 불안해질 수 있어요. 율의 자세와 담요의 익숙한 냄새를 함께 생각해 봐요.",
+                        }
+                    );
                 } else {
+                    let solved = self.chapter;
                     self.chapter += 1;
-                    self.modal = Modal::None;
+                    self.modal = Modal::Conclusion(solved);
                     self.selected.clear();
-                    self.message=match self.chapter {1=>"추리 성공! 발자국 렌즈를 얻었어요. [Q]로 모리의 빛을 부르면 아직 못 찾은 흔적을 안내해요.",2=>"추리 성공! 온실 아래를 살펴보세요. 뛰어가 안기보다 먼저 율의 마음을 읽어 주세요.",_=>"추리 성공! 준비가 됐어요. 온실 곁에서 [E]를 눌러 율에게 천천히 마음을 전하세요."}.into();
+                    self.message = NEXT_STEPS[solved].into();
                 }
             }
             Action::Rescue(choice) if self.phase == Phase::Search && self.chapter == 3 => {
@@ -338,10 +557,23 @@ impl Case {
                 *self = Self::default();
                 self.muted = muted;
                 self.phase = Phase::Story(0);
+                self.message =
+                    "“율아, 같이 놀까?” [Space] 또는 놀이 버튼으로 먼저 함께 놀아 주세요.".into();
+            }
+            Action::MainMenu if self.phase == Phase::Reunion => {
+                let muted = self.muted;
+                let revision = self.revision;
+                *self = Self::default();
+                self.muted = muted;
+                self.revision = revision;
             }
             Action::Sound => self.muted = !self.muted,
             _ => {}
         }
+        if self.phase != phase {
+            self.scene_elapsed = 0.;
+        }
+        self.sync_dialogue();
         self.revision = self.revision.wrapping_add(1);
     }
     pub fn validate(&self) -> bool {
@@ -364,42 +596,54 @@ mod tests {
             ..Default::default()
         }
     }
+    fn act(c: &mut Case, action: Action) {
+        c.apply(Action::FinishDialogue);
+        c.apply(action);
+    }
     #[test]
     fn complete_case_with_wrong_turns_and_recovery() {
         let mut c = search();
         assert!(!c.available(5));
-        c.apply(Action::Inspect(5));
+        act(&mut c, Action::Inspect(5));
         assert!(!c.found[5]);
         for ch in 0..3 {
             for id in PAIRS[ch] {
-                c.apply(Action::Inspect(id));
-                c.apply(Action::Close);
+                act(&mut c, Action::Inspect(id));
+                act(&mut c, Action::Close);
             }
             assert!(c.ready());
-            c.apply(Action::Deduce);
-            c.apply(Action::Theory(CORRECT[ch]));
+            act(&mut c, Action::Deduce);
+            act(&mut c, Action::Theory(CORRECT[ch]));
             assert_eq!(c.chapter, ch);
             for id in PAIRS[ch] {
-                c.apply(Action::Select(id));
+                act(&mut c, Action::Select(id));
             }
-            c.apply(Action::Theory((CORRECT[ch] + 1) % 3));
+            act(&mut c, Action::Theory((CORRECT[ch] + 1) % 3));
             assert_eq!(c.chapter, ch);
-            c.apply(Action::Theory(CORRECT[ch]));
+            act(&mut c, Action::Theory(CORRECT[ch]));
             assert_eq!(c.chapter, ch + 1);
+            assert_eq!(c.modal, Modal::Conclusion(ch));
+            act(&mut c, Action::Close);
             assert!(c.validate());
         }
-        c.apply(Action::Rescue(0));
+        act(&mut c, Action::Rescue(0));
         assert_eq!(c.trust, 0);
         for a in [1, 0, 2] {
-            c.apply(Action::Rescue(a));
+            act(&mut c, Action::Rescue(a));
             assert!(c.validate());
         }
         assert_eq!(c.phase, Phase::Reunion);
+        act(&mut c, Action::MainMenu);
+        assert_eq!(c.phase, Phase::Title);
+        assert!(c.validate());
+        act(&mut c, Action::Start);
+        assert_eq!(c.chapter, 0);
+        assert_eq!(c.count(), 0);
     }
     #[test]
     fn save_round_trip_and_corruption_guard() {
         let mut c = search();
-        c.apply(Action::Inspect(0));
+        act(&mut c, Action::Inspect(0));
         let loaded: Case = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
         assert!(loaded.validate());
         assert_eq!(loaded.modal, Modal::None);
@@ -410,14 +654,21 @@ mod tests {
     #[test]
     fn wrong_evidence_cannot_unlock_chapter() {
         let mut c = search();
-        for i in [2, 3] {
-            c.apply(Action::Inspect(i));
+        for i in [0, 1, 2, 3, 4] {
+            act(&mut c, Action::Inspect(i));
         }
-        c.apply(Action::Deduce);
+        act(&mut c, Action::Deduce);
         for i in [2, 3] {
-            c.apply(Action::Select(i));
+            act(&mut c, Action::Select(i));
         }
-        c.apply(Action::Theory(1));
+        act(&mut c, Action::ViewClue(0));
+        assert_eq!(c.modal, Modal::Deduction);
+        assert_eq!(c.selected, vec![2, 3]);
+        assert_eq!(c.evidence.preview, Some(0));
+        // Reading another candidate and trying a third selection must not replace either choice.
+        act(&mut c, Action::Select(4));
+        assert_eq!(c.selected, vec![2, 3]);
+        act(&mut c, Action::Theory(1));
         assert_eq!(c.chapter, 0);
         assert_eq!(c.mistakes, 1);
     }
@@ -425,12 +676,30 @@ mod tests {
     fn every_story_beat_and_restart_are_reachable() {
         let mut c = Case::default();
         c.apply(Action::Start);
+        c.apply(Action::Next);
+        assert_eq!(c.phase, Phase::Story(0));
+        for stage in 0..3 {
+            c.apply(Action::Play);
+            // Repeated presses cannot complete a reaction or skip the first afternoon.
+            c.apply(Action::Play);
+            c.apply(Action::Next);
+            assert_eq!(c.bonding.completed, stage);
+            assert_eq!(c.phase, Phase::Story(0));
+            c.tick_bonding(BOND_DURATIONS[stage]);
+            assert_eq!(c.bonding.completed, stage + 1);
+            c.apply(Action::FinishDialogue);
+        }
+        assert!(c.bonding.ready());
         for i in 0..5 {
             assert_eq!(c.phase, Phase::Story(i));
+            c.apply(Action::FinishDialogue);
+            c.tick(2.0);
             c.apply(Action::Next);
         }
         assert_eq!(c.phase, Phase::Search);
         c.apply(Action::Restart);
         assert_eq!(c.phase, Phase::Story(0));
+        assert!(!c.bonding.ready());
+        assert_eq!(c.bonding.completed, 0);
     }
 }
