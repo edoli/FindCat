@@ -55,7 +55,7 @@ pub fn drive(
     mut resized: MessageWriter<bevy::window::WindowResized>,
     director: Res<presentation::Director>,
     panels: Query<(&ui::UiPanel, &ComputedNode, &UiGlobalTransform)>,
-    mut marker_input: Query<(&ui::Marker, &mut Interaction)>,
+    marker_input: Query<(Entity, &ui::Marker)>,
     cat: Single<&Transform, With<Cat>>,
 ) {
     if t.started.elapsed().as_secs() > 240 {
@@ -210,9 +210,11 @@ pub fn drive(
                     });
                 }
                 if t.step == 9 {
-                    for (marker, mut interaction) in &mut marker_input {
+                    for (entity, marker) in &marker_input {
                         if marker.0 == 0 {
-                            *interaction = Interaction::Hovered;
+                            commands
+                                .entity(entity)
+                                .insert(bevy::picking::hover::Hovered(true));
                         }
                     }
                     shot(&mut commands, &mut t, "12-search");

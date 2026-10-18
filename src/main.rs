@@ -120,7 +120,7 @@ fn run(asset_dir: String, testbed: bool, save: PathBuf, load: Option<Case>) {
         load,
     })
     .insert_resource(ClearColor(Color::srgb(0.84, 0.87, 0.80)))
-    .insert_resource(AmbientLight {
+    .insert_resource(GlobalAmbientLight {
         color: Color::srgb(1., 0.91, 0.78),
         brightness: 300.,
         ..default()
@@ -131,6 +131,8 @@ fn run(asset_dir: String, testbed: bool, save: PathBuf, load: Option<Case>) {
     .init_resource::<Travel>()
     .init_resource::<presentation::Director>()
     .init_resource::<typography::Coverage>()
+    .add_observer(ui::activate)
+    .add_observer(ui::dialogue_pressed)
     .add_plugins(
         DefaultPlugins
             .set(AssetPlugin {
@@ -235,7 +237,9 @@ fn run(asset_dir: String, testbed: bool, save: PathBuf, load: Option<Case>) {
     #[cfg(target_arch = "wasm32")]
     app.add_systems(
         PreUpdate,
-        browser::resize.before(bevy::ui::UiSystems::Focus),
+        browser::resize
+            .before(bevy::ui::UiSystems::Focus)
+            .before(bevy::picking::PickingSystems::Backend),
     );
     #[cfg(target_arch = "wasm32")]
     app.add_systems(
@@ -259,16 +263,16 @@ fn setup(
         photo: assets.load("images/cat_portrait.png"),
     });
     commands.spawn((
-        SceneRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("models/neighborhood.glb"))),
+        WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("models/neighborhood.glb"))),
         Transform::default(),
     ));
     commands.spawn((
-        SceneRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("models/detective.glb"))),
+        WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("models/detective.glb"))),
         Transform::from_xyz(-3., 0.15, -0.7).with_scale(Vec3::splat(0.72)),
         Detective,
     ));
     commands.spawn((
-        SceneRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("models/cat.glb"))),
+        WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("models/cat.glb"))),
         Transform::from_xyz(-4.9, 0.15, -1.5).with_scale(Vec3::splat(CAT_SCALE)),
         Cat,
     ));
@@ -279,7 +283,7 @@ fn setup(
         Toy,
     ));
     commands.spawn((
-        SceneRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("models/fairy.glb"))),
+        WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("models/fairy.glb"))),
         Transform::from_xyz(-2., 1.7, -0.3),
         Fairy,
         Visibility::Hidden,
@@ -288,7 +292,7 @@ fn setup(
         DirectionalLight {
             illuminance: 8500.,
             color: Color::srgb(1., 0.94, 0.84),
-            shadows_enabled: true,
+            shadow_maps_enabled: true,
             ..default()
         },
         Transform::from_xyz(-6., 12., 8.).looking_at(Vec3::ZERO, Vec3::Y),

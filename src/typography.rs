@@ -1,6 +1,8 @@
 //! Perceptual glyph coverage for UI rendered into Bevy's linear-light framebuffer.
 //! Keep dark-on-paper and light-on-green atlases separate: their coverage curves differ.
 use crate::*;
+#[cfg(not(target_arch = "wasm32"))]
+use bevy::text::{FontSize, LineHeight};
 use bevy::{asset::AssetId, text::TextLayoutInfo};
 use std::collections::HashSet;
 
@@ -17,25 +19,24 @@ pub struct LogicalTextMetrics {
 pub fn align_desktop_text(
     window: Single<&Window, With<PrimaryWindow>>,
     ui_scale: Res<UiScale>,
-    mut text: Query<(&LogicalTextMetrics, &mut TextFont)>,
+    mut text: Query<(&LogicalTextMetrics, &mut TextFont, &mut LineHeight)>,
 ) {
     let scale = (window.scale_factor() * ui_scale.0).max(0.1);
-    for (metrics, mut font) in &mut text {
+    for (metrics, font, mut leading) in &mut text {
         // Rasterize whole physical pixels, rather than e.g. a 25.5 px glyph at 150%.
         // Convert back to logical UI units so layout still follows the monitor DPI.
         let size = (metrics.size * scale).round().max(1.) / scale;
         let line_height =
             bevy::text::LineHeight::Px((metrics.line_height * scale).round().max(1.) / scale);
-        if (font.font_size - size).abs() > 0.0001 || font.line_height != line_height {
-            font.font_size = size;
-            font.line_height = line_height;
-        }
+        font.map_unchanged(|font| &mut font.font_size)
+            .set_if_neq(FontSize::Px(size));
+        leading.set_if_neq(line_height);
     }
 }
 
 #[derive(Resource)]
 pub struct Coverage {
-    processed: HashSet<(AssetId<Image>, usize)>,
+    processed: HashSet<(AssetId<Image>, [u32; 4])>,
     dark: [u8; 256],
     light: [u8; 256],
 }
@@ -71,8 +72,10 @@ fn coverage_lut(fg: [f32; 3], bg: [f32; 3]) -> [u8; 256] {
 pub fn prepare_light_font(media: Res<Media>, mut fonts: ResMut<Assets<Font>>) {
     if fonts.get(&media.light_bold).is_none() {
         if let Some(font) = fonts.get(&media.bold).cloned() {
-            // Font bytes share an Arc; only the glyph coverage atlases are independent.
-            let _ = fonts.insert(media.light_bold.id(), font);
+            // Parley keys atlases by font-data identity. Give light text its own blob
+            // so its coverage correction never changes dark text using the same face.
+            let separate = Font::from_bytes(font.data.as_ref().to_vec());
+            let _ = fonts.insert(media.light_bold.id(), separate);
         }
     }
 }
@@ -80,35 +83,35 @@ pub fn prepare_light_font(media: Res<Media>, mut fonts: ResMut<Assets<Font>>) {
 pub fn correct_coverage(
     text: Query<(&TextFont, &TextLayoutInfo), Changed<TextLayoutInfo>>,
     media: Res<Media>,
-    layouts: Res<Assets<TextureAtlasLayout>>,
     mut images: ResMut<Assets<Image>>,
     mut coverage: ResMut<Coverage>,
 ) {
     for (font, layout) in &text {
-        let lut = if font.font == media.light_bold {
+        let lut = if font.font == media.light_bold.clone().into() {
             coverage.light
         } else {
             coverage.dark
         };
         for glyph in &layout.glyphs {
             let info = &glyph.atlas_info;
-            let key = (info.texture, info.location.glyph_index);
+            if !info.is_alpha_mask {
+                continue;
+            }
+            let min = info.rect.min.as_uvec2();
+            let max = info.rect.max.as_uvec2();
+            let key = (info.texture, [min.x, min.y, max.x, max.y]);
             if coverage.processed.contains(&key) {
                 continue;
             }
-            let Some(atlas) = layouts.get(info.texture_atlas) else {
-                continue;
-            };
-            let rect = atlas.textures[info.location.glyph_index];
-            let Some(image) = images.get_mut(info.texture) else {
+            let Some(mut image) = images.get_mut(info.texture) else {
                 continue;
             };
             let stride = image.width() as usize;
             let Some(data) = image.data.as_mut() else {
                 continue;
             };
-            for y in rect.min.y..rect.max.y {
-                for x in rect.min.x..rect.max.x {
+            for y in min.y..max.y {
+                for x in min.x..max.x {
                     let index = ((y as usize) * stride + x as usize) * 4 + 3;
                     data[index] = lut[data[index] as usize];
                 }

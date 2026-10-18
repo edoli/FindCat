@@ -1,6 +1,6 @@
 # 오늘도, 너에게 · FindCat
 
-집을 나간 작은 고양이 **율**을 찾아, 고양이의 마음을 배우는 따뜻한 3D 추리 게임입니다. Rust / Bevy 0.17.3으로 만든 Windows / WebGL2 게임입니다. 한 동네에서 시작과 결말이 있는 짧은 싱글 플레이 이야기입니다.
+집을 나간 작은 고양이 **율**을 찾아, 고양이의 마음을 배우는 따뜻한 3D 추리 게임입니다. Rust / Bevy 0.20.0으로 만든 Windows / WebGL2 게임입니다. 한 동네에서 시작과 결말이 있는 짧은 싱글 플레이 이야기입니다.
 
 **[브라우저에서 플레이](https://edoli.github.io/FindCat/)** · [자동 배포 상태](https://github.com/edoli/FindCat/actions/workflows/pages.yml)
 
@@ -42,6 +42,8 @@ trunk serve --release
 ```powershell
 cargo run --locked
 ```
+
+`rust-toolchain.toml`이 Rust 1.99.1, rustfmt, WebAssembly 타깃을 지정합니다. rustup 환경에서는 프로젝트 명령을 실행할 때 필요한 도구를 자동으로 설치합니다. Rust와 Python 의존성의 정확한 버전은 각각 `Cargo.lock`, `python/uv.lock`으로 고정하며 CI도 같은 Rust 버전을 사용합니다. Python 에셋 도구에는 Python 3.12 이상이 필요합니다.
 
 첫 빌드는 Bevy와 그래픽 라이브러리를 컴파일하므로 시간이 걸립니다. 생성된 에셋은 이미 `assets`에 있어 재생성할 필요가 없습니다.
 

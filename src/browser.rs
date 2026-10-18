@@ -1,7 +1,7 @@
 //! Browser readiness and opt-in, read-only telemetry for hands-free release checks.
 use crate::*;
-use bevy::scene::SceneInstance;
 use bevy::text::FontSmoothing;
+use bevy::world_serialization::{WorldInstance, WorldInstanceSpawner};
 
 /// Keep the GPU backbuffer, camera targets and glyph atlas at the actual display density.
 /// CSS only controls the surface's size; it never scales a previously rendered frame.
@@ -57,8 +57,8 @@ pub fn status(
     game: Res<Session>,
     media: Option<Res<Media>>,
     assets: Res<AssetServer>,
-    scenes: Query<&SceneInstance>,
-    spawner: Res<SceneSpawner>,
+    scenes: Query<&WorldInstance>,
+    spawner: Res<WorldInstanceSpawner>,
     buttons: Query<(
         &ui::Click,
         &ComputedNode,
@@ -128,7 +128,7 @@ pub fn status(
             .iter()
             .map(|(f, t, n, at)| {
                 serde_json::json!({
-                    "text":t.0,"font_size":f.font_size,
+                    "text":t.0,"font_size":match f.font_size { bevy::text::FontSize::Px(size) => size, _ => 0. },
                     "min":(at.translation-n.size()*0.5).to_array(),
                     "max":(at.translation+n.size()*0.5).to_array(),
                 })

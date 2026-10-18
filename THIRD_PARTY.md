@@ -1,6 +1,6 @@
 # Third-party notices
 
-- **Bevy 0.17.3**: MIT OR Apache-2.0. https://bevy.org / https://github.com/bevyengine/bevy
+- **Bevy 0.20.0**: MIT OR Apache-2.0. https://bevy.org / https://github.com/bevyengine/bevy
 - **Nanum Gothic**: Copyright (c) 2010, NAVER Corporation. SIL Open Font License 1.1. Font and complete license are included in `assets/fonts`. Source: https://github.com/google/fonts/tree/main/ofl/nanumgothic
 - **Pretendard 1.3.9** (UI Regular / SemiBold): Copyright (c) 2021, Kil Hyung-jin. SIL Open Font License 1.1. Font files are unmodified; license included in `assets/fonts/Pretendard-OFL.txt`. Source: https://github.com/orioncactus/pretendard/tree/v1.3.9
 - **Fira Mono**: Bevy's embedded default fallback font, SIL Open Font License 1.1. License included in `assets/fonts/FiraMono-OFL.txt`. Source: https://github.com/google/fonts/tree/main/ofl/firamono

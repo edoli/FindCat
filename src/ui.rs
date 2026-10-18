@@ -1,7 +1,9 @@
 use crate::*;
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
-use bevy::text::{FontSmoothing, LineHeight};
-use bevy::ui::RelativeCursorPosition;
+use bevy::picking::{events::PointerPress, hover::Hovered};
+use bevy::text::{FontSize, FontSmoothing, LineHeight};
+use bevy::ui::{Pressed, RelativeCursorPosition};
+use bevy::ui_widgets::{Activate, ActivateOnPress, Button};
 
 const INK: Color = Color::srgb(0.09, 0.17, 0.15);
 const SECONDARY: Color = Color::srgb(0.28, 0.34, 0.30);
@@ -14,6 +16,7 @@ const LINE: Color = Color::srgb(0.77, 0.80, 0.72);
 #[derive(Component)]
 pub struct UiRoot;
 #[derive(Component)]
+#[require(Button, ActivateOnPress, Hovered)]
 pub struct Click(pub Action);
 #[derive(Component)]
 pub struct ButtonBase(pub bool);
@@ -75,24 +78,23 @@ fn dialogue_label(
 ) {
     let font = TextFont {
         font: if color == PAPER {
-            m.light_bold.clone()
+            m.light_bold.clone().into()
         } else if bold {
-            m.bold.clone()
+            m.bold.clone().into()
         } else {
-            m.font.clone()
+            m.font.clone().into()
         },
-        font_size: size,
-        line_height: LineHeight::RelativeToFont(1.4),
+        font_size: FontSize::Px(size),
         font_smoothing: FontSmoothing::AntiAliased,
         ..default()
     };
     p.spawn((
         Text::new(c.dialogue.visible()),
         font.clone(),
+        LineHeight::RelativeToFont(1.4),
         TextColor(color),
         DialogueText,
         DialogueArea,
-        Interaction::None,
         typography::LogicalTextMetrics {
             size,
             line_height: size * 1.4,
@@ -103,6 +105,7 @@ fn dialogue_label(
         p.spawn((
             TextSpan::new(c.dialogue.remaining()),
             font,
+            LineHeight::RelativeToFont(1.4),
             TextColor(color.with_alpha(0.)),
             UnrevealedText,
             typography::LogicalTextMetrics {
@@ -153,18 +156,18 @@ fn label(
         },
         TextFont {
             font: if color == PAPER {
-                m.light_bold.clone()
+                m.light_bold.clone().into()
             } else if bold {
-                m.bold.clone()
+                m.bold.clone().into()
             } else {
-                m.font.clone()
+                m.font.clone().into()
             },
-            font_size: size,
-            line_height: LineHeight::RelativeToFont(1.4),
+            font_size: FontSize::Px(size),
             font_smoothing: FontSmoothing::AntiAliased,
             ..default()
         },
         TextColor(color),
+        LineHeight::RelativeToFont(1.4),
     ));
 }
 fn button(
@@ -179,6 +182,7 @@ fn button(
         Click(action),
         ButtonBase(primary),
         Node {
+            border_radius: BorderRadius::all(px(12)),
             min_height: px(48),
             padding: UiRect::axes(px(18), px(11)),
             border: UiRect::all(px(1)),
@@ -188,7 +192,6 @@ fn button(
             ..default()
         },
         BorderColor::all(if primary { GREEN } else { LINE }),
-        BorderRadius::all(px(12)),
         BackgroundColor(if primary { GREEN } else { SOFT }),
     ))
     .with_children(|p| label(p, m, s, 17., if primary { PAPER } else { INK }, true));
@@ -206,33 +209,33 @@ fn rule(p: &mut ChildSpawnerCommands) {
 }
 fn panel(n: Node, name: &'static str) -> impl Bundle {
     (
-        n,
+        Node {
+            border_radius: BorderRadius::all(px(20)),
+            ..n
+        },
         UiPanel(name),
         BackgroundColor(PAPER),
-        BorderRadius::all(px(20)),
     )
 }
 fn photo(p: &mut ChildSpawnerCommands, m: &Media, size: f32) {
-    p.spawn((
-        Node {
-            width: px(size),
-            height: px(size),
-            overflow: Overflow::clip(),
-            flex_shrink: 0.,
-            ..default()
-        },
-        BorderRadius::all(px(12)),
-    ))
-    .with_children(|p| {
-        p.spawn((
-            ImageNode::new(m.photo.clone()),
-            Node {
-                width: px(size),
-                height: px(size),
-                ..default()
-            },
-        ));
-    });
+    p.spawn((Node {
+        border_radius: BorderRadius::all(px(12)),
+        width: px(size),
+        height: px(size),
+        overflow: Overflow::clip(),
+        flex_shrink: 0.,
+        ..default()
+    },))
+        .with_children(|p| {
+            p.spawn((
+                ImageNode::new(m.photo.clone()),
+                Node {
+                    width: px(size),
+                    height: px(size),
+                    ..default()
+                },
+            ));
+        });
 }
 fn progress(p: &mut ChildSpawnerCommands, completed: usize) {
     p.spawn(Node {
@@ -244,63 +247,73 @@ fn progress(p: &mut ChildSpawnerCommands, completed: usize) {
         for i in 0..3 {
             p.spawn((
                 Node {
+                    border_radius: BorderRadius::MAX,
                     flex_grow: 1.,
                     height: px(5),
                     ..default()
                 },
                 BackgroundColor(if completed > i { GREEN } else { LINE }),
-                BorderRadius::MAX,
             ));
         }
     });
 }
+// Activate on pointer down, preserving the existing single-input dialogue behavior.
+pub fn activate(
+    event: On<Activate>,
+    clicks: Query<&Click>,
+    game: Res<Session>,
+    mut actions: ResMut<Actions>,
+) {
+    if let Ok(click) = clicks.get(event.entity) {
+        actions.0.push_back(
+            if game.0.typing() && !matches!(click.0, Action::Help | Action::Pause | Action::Sound) {
+                Action::FinishDialogue
+            } else {
+                click.0.clone()
+            },
+        );
+    }
+}
+pub fn dialogue_pressed(
+    mut event: On<PointerPress>,
+    areas: Query<(), With<DialogueArea>>,
+    game: Res<Session>,
+    mut actions: ResMut<Actions>,
+) {
+    if areas.contains(event.entity) {
+        event.propagate(false);
+        if game.0.typing() {
+            actions.0.push_back(Action::FinishDialogue);
+        }
+    }
+}
 pub fn buttons(
-    mut q: Query<
+    mut buttons: Query<
         (
-            &Interaction,
-            &Click,
+            &Hovered,
+            Has<Pressed>,
             Option<&ButtonBase>,
             &mut BackgroundColor,
         ),
-        Changed<Interaction>,
+        With<Click>,
     >,
-    mut actions: ResMut<Actions>,
-    game: Res<Session>,
-    dialogue_areas: Query<&Interaction, (With<DialogueArea>, Changed<Interaction>)>,
 ) {
-    if game.0.typing() && dialogue_areas.iter().any(|i| *i == Interaction::Pressed) {
-        actions.0.push_back(Action::FinishDialogue);
-    }
-    for (i, action, base, mut bg) in &mut q {
+    for (hover, pressed, base, mut bg) in &mut buttons {
         let filled = base.is_some_and(|b| b.0);
-        *bg = BackgroundColor(match i {
-            Interaction::Pressed => {
-                actions.0.push_back(
-                    if game.0.typing()
-                        && !matches!(action.0, Action::Help | Action::Pause | Action::Sound)
-                    {
-                        Action::FinishDialogue
-                    } else {
-                        action.0.clone()
-                    },
-                );
-                Color::srgb(0.37, 0.27, 0.13)
+        let color = if pressed {
+            Color::srgb(0.37, 0.27, 0.13)
+        } else if hover.0 {
+            if filled {
+                Color::srgb(0.22, 0.39, 0.30)
+            } else {
+                Color::srgb(0.81, 0.86, 0.75)
             }
-            Interaction::Hovered => {
-                if filled {
-                    Color::srgb(0.22, 0.39, 0.30)
-                } else {
-                    Color::srgb(0.81, 0.86, 0.75)
-                }
-            }
-            Interaction::None => {
-                if filled {
-                    GREEN
-                } else {
-                    SOFT
-                }
-            }
-        });
+        } else if filled {
+            GREEN
+        } else {
+            SOFT
+        };
+        bg.set_if_neq(BackgroundColor(color));
     }
 }
 pub fn rebuild(
@@ -515,7 +528,6 @@ fn story(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, n: usize, w: f32)
             "story",
         ),
         DialogueArea,
-        Interaction::None,
     ))
     .with_children(|p| {
         p.spawn(Node {
@@ -592,6 +604,7 @@ fn story(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, n: usize, w: f32)
 fn caption(root: &mut ChildSpawnerCommands, m: &Media, c: &Case) {
     root.spawn((
         Node {
+            border_radius: BorderRadius::all(px(14)),
             position_type: PositionType::Absolute,
             bottom: px(38),
             left: px(40),
@@ -601,9 +614,7 @@ fn caption(root: &mut ChildSpawnerCommands, m: &Media, c: &Case) {
             ..default()
         },
         BackgroundColor(GREEN),
-        BorderRadius::all(px(14)),
         DialogueArea,
-        Interaction::None,
     ))
     .with_children(|p| dialogue_label(p, m, c, 23., PAPER, true));
 }
@@ -672,6 +683,7 @@ fn field_hud(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, w: f32, celeb
     if celebrate {
         root.spawn((
             Node {
+                border_radius: BorderRadius::all(px(14)),
                 position_type: PositionType::Absolute,
                 top: px(190),
                 left: percent(30),
@@ -681,7 +693,6 @@ fn field_hud(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, w: f32, celeb
                 ..default()
             },
             BackgroundColor(GREEN),
-            BorderRadius::all(px(14)),
             ZIndex(8),
         ))
         .with_children(|p| {
@@ -705,6 +716,7 @@ fn field_hud(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, w: f32, celeb
             Click(Action::Inspect(id)),
             ButtonBase(true),
             Node {
+                border_radius: BorderRadius::MAX,
                 position_type: PositionType::Absolute,
                 width: px(42),
                 height: px(42),
@@ -714,7 +726,6 @@ fn field_hud(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, w: f32, celeb
                 ..default()
             },
             BorderColor::all(PAPER),
-            BorderRadius::MAX,
             BackgroundColor(GREEN),
             ZIndex(3),
         ))
@@ -723,6 +734,7 @@ fn field_hud(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, w: f32, celeb
             p.spawn((
                 MarkerTooltip(id),
                 Node {
+                    border_radius: BorderRadius::all(px(10)),
                     position_type: PositionType::Absolute,
                     left: px(48),
                     top: px(-1),
@@ -731,7 +743,6 @@ fn field_hud(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, w: f32, celeb
                     ..default()
                 },
                 BackgroundColor(PAPER),
-                BorderRadius::all(px(10)),
                 Visibility::Hidden,
             ))
             .with_children(|p| label(p, m, CLUES[id].place, 16., INK, true));
@@ -813,6 +824,7 @@ fn field_hud(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, w: f32, celeb
                 Click(Action::Inspect(0)),
                 ButtonBase(true),
                 Node {
+                    border_radius: BorderRadius::all(px(12)),
                     min_height: px(48),
                     min_width: px(150),
                     padding: UiRect::axes(px(16), px(10)),
@@ -821,7 +833,6 @@ fn field_hud(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, w: f32, celeb
                     ..default()
                 },
                 BackgroundColor(GREEN),
-                BorderRadius::all(px(12)),
             ))
             .with_children(|p| {
                 p.spawn((
@@ -832,12 +843,13 @@ fn field_hud(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, w: f32, celeb
                         line_height: 16. * 1.2,
                     },
                     TextFont {
-                        font: m.light_bold.clone(),
-                        font_size: 16.,
+                        font: m.light_bold.clone().into(),
+                        font_size: FontSize::Px(16.),
                         font_smoothing: FontSmoothing::AntiAliased,
                         ..default()
                     },
                     TextColor(PAPER),
+                    LineHeight::RelativeToFont(1.2),
                 ));
             });
         });
@@ -877,13 +889,13 @@ fn evidence(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, id: usize, h: 
         dialogue_label(p, m, c, if compact { 17. } else { 18. }, INK, false);
         p.spawn((
             Node {
+                border_radius: BorderRadius::all(px(12)),
                 padding: UiRect::all(px(if compact { 13. } else { 18. })),
                 row_gap: px(10),
                 flex_direction: FlexDirection::Column,
                 ..default()
             },
             BackgroundColor(SOFT),
-            BorderRadius::all(px(12)),
         ))
         .with_children(|p| {
             label(p, m, "새로 알게 된 고양이의 마음", 16., GREEN, true);
@@ -947,12 +959,12 @@ fn journal(p: &mut ChildSpawnerCommands, m: &Media, c: &Case) {
             } else {
                 p.spawn((
                     Node {
+                        border_radius: BorderRadius::all(px(12)),
                         padding: UiRect::all(px(18)),
                         min_height: px(72),
                         ..default()
                     },
                     BackgroundColor(SOFT),
-                    BorderRadius::all(px(12)),
                 ))
                 .with_children(|p| {
                     label(
@@ -981,6 +993,7 @@ fn evidence_button(
         Click(action),
         ButtonBase(primary),
         Node {
+            border_radius: BorderRadius::all(px(10)),
             min_height: px(48),
             padding: UiRect::axes(px(10), px(8)),
             border: UiRect::all(px(1)),
@@ -991,7 +1004,6 @@ fn evidence_button(
         },
         BackgroundColor(if primary { GREEN } else { SOFT }),
         BorderColor::all(if primary { GREEN } else { LINE }),
-        BorderRadius::all(px(10)),
     ))
     .with_children(|p| label(p, m, text, 16., if primary { PAPER } else { INK }, true));
 }
@@ -1067,8 +1079,16 @@ fn deduction(p: &mut ChildSpawnerCommands, m: &Media, c: &Case, h: f32) {
             }
         });
         row.spawn((
-            Node { width: percent(38), min_width: px(0), height: percent(100), padding: UiRect::all(px(14)), overflow: Overflow::scroll_y(), ..column(0.) },
-            BackgroundColor(SOFT), BorderRadius::all(px(12)), EvidenceScroll,
+            Node {
+                border_radius: BorderRadius::all(px(12)),
+                width: percent(38),
+                min_width: px(0),
+                height: percent(100),
+                padding: UiRect::all(px(14)),
+                overflow: Overflow::scroll_y(),
+                ..column(0.)
+            },
+            BackgroundColor(SOFT), EvidenceScroll,
             ScrollPosition::default(), RelativeCursorPosition::default(),
         )).with_children(|p| {
             p.spawn(Node { width: percent(100), flex_shrink: 0., ..column(8.) }).with_children(|p| {
@@ -1145,12 +1165,12 @@ fn deduction(p: &mut ChildSpawnerCommands, m: &Media, c: &Case, h: f32) {
                 } else {
                     p.spawn((
                         Node {
+                            border_radius: BorderRadius::all(px(10)),
                             min_height: px(48),
                             padding: UiRect::all(px(12)),
                             ..default()
                         },
                         BackgroundColor(SOFT),
-                        BorderRadius::all(px(10)),
                     ))
                     .with_children(|p| {
                         label(
@@ -1172,11 +1192,11 @@ fn deduction(p: &mut ChildSpawnerCommands, m: &Media, c: &Case, h: f32) {
                 } else {
                     p.spawn((
                         Node {
+                            border_radius: BorderRadius::all(px(12)),
                             padding: UiRect::all(px(10)),
                             ..default()
                         },
                         BackgroundColor(SOFT),
-                        BorderRadius::all(px(12)),
                     ))
                     .with_children(|p| label(p, m, text, 16., SECONDARY, false));
                 }
@@ -1307,7 +1327,14 @@ fn help(p: &mut ChildSpawnerCommands, m: &Media) {
         INK,
         false,
     );
-    p.spawn((Node {padding: UiRect::all(px(18)),..default()},BackgroundColor(SOFT),BorderRadius::all(px(12))))
+    p.spawn((
+        Node {
+            border_radius: BorderRadius::all(px(12)),
+            padding: UiRect::all(px(18)),
+            ..default()
+        },
+        BackgroundColor(SOFT),
+    ))
         .with_children(|p|label(p,m,"WASD / 방향키    걷기\nE    가까운 곳 조사\nJ    단서 수첩     R    추리하기\nQ    모리의 안내\nTab    동네 전체 보기     휠    확대 / 축소\nM    소리 켜기 / 끄기     Esc    메뉴 / 닫기",18.,INK,false));
     label(
         p,
@@ -1402,7 +1429,7 @@ fn ending(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, h: f32) {
 pub fn markers(
     camera: Single<(&Camera, &GlobalTransform), With<WorldCamera>>,
     player: Single<&Transform, With<Detective>>,
-    mut nodes: Query<(&Marker, &mut Node, &mut Visibility, &Interaction), Without<MarkerTooltip>>,
+    mut nodes: Query<(&Marker, &mut Node, &mut Visibility, &Hovered), Without<MarkerTooltip>>,
     mut tips: Query<(&MarkerTooltip, &mut Visibility), Without<Marker>>,
     game: Res<Session>,
     director: Res<presentation::Director>,
@@ -1443,7 +1470,7 @@ pub fn markers(
             node.top = px(pos.y - 21.);
             used.push(pos);
             *visibility = Visibility::Visible;
-            if *interaction != Interaction::None || near == Some(marker.0) {
+            if interaction.0 || near == Some(marker.0) {
                 named.push(marker.0);
             }
         }

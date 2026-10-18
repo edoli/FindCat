@@ -155,7 +155,7 @@ pub fn fade_characters(
                     || material.alpha_mode != mode
             });
             if changed {
-                if let Some(material) = materials.get_mut(&handle.0) {
+                if let Some(mut material) = materials.get_mut(&handle.0) {
                     material.base_color = color;
                     material.emissive = emissive;
                     material.alpha_mode = mode;
