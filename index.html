@@ -25,6 +25,9 @@
     #boot h1 { font-size:clamp(30px,5vw,48px); margin:12px 0; }
     #boot p { line-height:1.8; color:#e2e9da; max-width:480px; margin:8px auto; }
     #boot small { color:#c2d1bd; }
+    #fullscreen-toggle { position:fixed; right:8px; bottom:8px; z-index:3; width:36px; height:36px; padding:8px; border:1px solid #c2d1bd; border-radius:9px; background:#263f35e6; color:#fbf7ed; touch-action:manipulation; }
+    #fullscreen-toggle[hidden] { display:none; }
+    #fullscreen-toggle svg { display:block; width:100%; height:100%; }
     .paw { font-size:44px; animation:breathe 1.4s ease-in-out infinite alternate; }
     @keyframes breathe { to { transform:translateY(-7px); opacity:.6; } }
   </style>
@@ -54,6 +57,68 @@
 <body>
   <main id="frame" aria-label="오늘도, 너에게 게임"><div id="surface"><canvas id="game" tabindex="0" aria-label="게임 화면. Enter로 시작, 장소 번호를 클릭해 조사하세요."></canvas></div></main>
   <div id="boot" role="status"><div class="paw">🐾</div><h1>오늘도, 너에게</h1><p id="status">작은 발자국을 따라갈 준비 중이에요…<br>처음에는 게임을 내려받는 데 잠시 걸릴 수 있어요.</p><p><small>PC 브라우저 권장 · Enter로 시작 · 장소 번호를 클릭해 조사</small></p></div>
+  <button id="fullscreen-toggle" type="button" hidden aria-label="전체화면 켜기" aria-pressed="false" title="전체화면 켜기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg></button>
+  <script>
+    (() => {
+      // Screen size alone would also match small desktop windows. Include touch iPads
+      // that identify as Macs, without opting desktop browsers into automatic fullscreen.
+      const mobile = navigator.userAgentData?.mobile === true
+        || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      if (!mobile) return;
+
+      const root = document.documentElement;
+      const button = document.getElementById('fullscreen-toggle');
+      const request = root.requestFullscreen || root.webkitRequestFullscreen;
+      const enabled = root.requestFullscreen ? document.fullscreenEnabled : document.webkitFullscreenEnabled;
+      if (!request || enabled === false) return;
+
+      let attempted = false;
+      let pending = false;
+      const fullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+      const update = () => {
+        const active = fullscreen();
+        const label = active ? '전체화면 끄기' : '전체화면 켜기';
+        button.setAttribute('aria-pressed', String(active));
+        button.setAttribute('aria-label', label);
+        button.title = label;
+      };
+      const enter = () => {
+        if (pending || fullscreen()) return;
+        pending = true;
+        try {
+          // Request synchronously inside a real gesture; rejected requests never block play.
+          Promise.resolve(request.call(root, {navigationUI: 'hide'}))
+            .catch(() => {})
+            .finally(() => { pending = false; update(); });
+        } catch {
+          pending = false;
+        }
+      };
+
+      button.hidden = false;
+      document.addEventListener('fullscreenchange', update);
+      document.addEventListener('webkitfullscreenchange', update);
+      const gesture = window.PointerEvent ? 'pointerup' : 'touchend';
+      document.addEventListener(gesture, event => {
+        if (attempted || !event.isTrusted || event.target.closest?.('#fullscreen-toggle')) return;
+        attempted = true;
+        // Attempt once, so leaving fullscreen does not make the next game tap re-enter it.
+        enter();
+      }, {capture: true, passive: true});
+      button.addEventListener('click', event => {
+        event.stopPropagation();
+        attempted = true;
+        if (fullscreen()) {
+          const exit = document.exitFullscreen || document.webkitExitFullscreen;
+          try { Promise.resolve(exit?.call(document)).catch(() => {}); } catch {}
+        } else {
+          enter();
+        }
+      });
+      update();
+    })();
+  </script>
   <noscript>게임을 실행하려면 JavaScript를 허용해 주세요.</noscript>
 </body>
 </html>
