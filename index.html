@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#263f35">
+  <meta name="description" content="고양이 탐정이 되어 작은 발자국을 따라가세요. 고양이의 마음을 배우는 따뜻한 3D 추리 게임.">
+  <title>오늘도, 너에게 · FindCat</title>
+  <base data-trunk-public-url>
+  <link data-trunk rel="rust" data-bin="findcat" data-cargo-features="web" data-wasm-opt="0">
+  <link data-trunk rel="copy-dir" href="assets">
+  <link data-trunk rel="copy-file" href="LICENSE">
+  <link data-trunk rel="copy-file" href="THIRD_PARTY.md">
+  <style>
+    * { box-sizing: border-box; }
+    html,body { margin:0; width:100%; height:100%; overflow:hidden; background:#263f35; }
+    body { display:grid; place-items:center; font-family:system-ui,sans-serif; color:#fbf7ed; }
+    #frame { position:relative; overflow:hidden; }
+    #surface { width:1440px; height:900px; transform-origin:top left; }
+    canvas { display:block; width:100%; height:100%; outline:none; touch-action:none; }
+    #boot { position:fixed; inset:0; display:grid; place-content:center; text-align:center; background:#263f35; padding:30px; z-index:2; }
+    #boot h1 { font-size:clamp(30px,5vw,48px); margin:12px 0; }
+    #boot p { line-height:1.8; color:#e2e9da; max-width:480px; margin:8px auto; }
+    #boot small { color:#c2d1bd; }
+    .paw { font-size:44px; animation:breathe 1.4s ease-in-out infinite alternate; }
+    @keyframes breathe { to { transform:translateY(-7px); opacity:.6; } }
+  </style>
+  <script>
+    if (new URLSearchParams(location.search).has('testbed')) document.documentElement.setAttribute('data-testbed','');
+    // Preserve readable game coordinates even on smaller browser windows.
+    function fitGame() {
+      const s = Math.min(innerWidth / 1440, innerHeight / 900);
+      const frame = document.getElementById('frame'), surface = document.getElementById('surface');
+      if (!frame) return;
+      frame.style.width = `${1440*s}px`; frame.style.height = `${900*s}px`;
+      surface.style.transform = `scale(${s})`;
+    }
+    addEventListener('resize', fitGame);
+    addEventListener('DOMContentLoaded', fitGame);
+    // Browsers suspend sound until a gesture. Resume the game's own contexts on input.
+    const contexts = [];
+    if (window.AudioContext) {
+      const NativeAudioContext = window.AudioContext;
+      window.AudioContext = class extends NativeAudioContext {
+        constructor(...args) { super(...args); contexts.push(this); }
+      };
+      for (const event of ['pointerdown','keydown']) addEventListener(event, () => {
+        for (const ctx of contexts) if (ctx.state === 'suspended') ctx.resume();
+      }, {capture:true});
+    }
+    addEventListener('error', e => {
+      const status = document.getElementById('status');
+      if (status && document.getElementById('boot').style.display !== 'none')
+        status.textContent = '게임을 시작하지 못했어요. 브라우저를 업데이트하고 새로고침해 주세요.';
+    });
+    addEventListener('TrunkApplicationStarted', () => {
+      document.getElementById('status').textContent = '동네와 고양이를 불러오고 있어요…';
+    });
+  </script>
+</head>
+<body>
+  <main id="frame" aria-label="오늘도, 너에게 게임"><div id="surface"><canvas id="game" tabindex="0" aria-label="게임 화면. Enter로 시작, 장소 번호를 클릭해 조사하세요."></canvas></div></main>
+  <div id="boot" role="status"><div class="paw">🐾</div><h1>오늘도, 너에게</h1><p id="status">작은 발자국을 따라갈 준비 중이에요…<br>처음에는 게임을 내려받는 데 잠시 걸릴 수 있어요.</p><p><small>PC 브라우저 권장 · Enter로 시작 · 장소 번호를 클릭해 조사</small></p></div>
+  <noscript>게임을 실행하려면 JavaScript를 허용해 주세요.</noscript>
+</body>
+</html>

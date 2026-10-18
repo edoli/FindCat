@@ -1,0 +1,57 @@
+name: Build and deploy game
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust and WebAssembly target
+        run: |
+          rustup toolchain install 1.96.1 --profile minimal --target wasm32-unknown-unknown
+          rustup default 1.96.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: wasm-release
+      - name: Test game rules
+        run: cargo test --locked --lib --no-default-features
+      - name: Install Trunk
+        run: |
+          curl -fsSL https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C "$HOME/.cargo/bin"
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+      - name: Build WebGL2 game
+        run: trunk build --release --locked --public-url "${{ steps.pages.outputs.base_path }}/"
+      - name: Upload game
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy game
+        id: deployment
+        uses: actions/deploy-pages@v4

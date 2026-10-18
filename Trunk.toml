@@ -1,0 +1,11 @@
+[build]
+target = "index.html"
+dist = "dist/web"
+public_url = "./"
+
+[serve]
+address = "127.0.0.1"
+port = 8080
+
+[tools]
+wasm_bindgen = "0.2.129"
