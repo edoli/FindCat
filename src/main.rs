@@ -5,6 +5,7 @@ mod navigation;
 mod presentation;
 #[cfg(not(target_arch = "wasm32"))]
 mod testbed;
+mod typography;
 mod ui;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -56,6 +57,7 @@ pub struct Beacon(pub usize);
 pub struct Media {
     pub font: Handle<Font>,
     pub bold: Handle<Font>,
+    pub light_bold: Handle<Font>,
     pub photo: Handle<Image>,
 }
 
@@ -129,6 +131,7 @@ fn run(asset_dir: String, testbed: bool, save: PathBuf, load: Option<Case>) {
     .init_resource::<Travel>()
     .init_resource::<ToyMoment>()
     .init_resource::<presentation::Director>()
+    .init_resource::<typography::Coverage>()
     .add_plugins(
         DefaultPlugins
             .set(AssetPlugin {
@@ -187,6 +190,7 @@ fn run(asset_dir: String, testbed: bool, save: PathBuf, load: Option<Case>) {
         Update,
         (
             input,
+            typography::prepare_light_font,
             ui::buttons,
             actions,
             movement,
@@ -206,6 +210,9 @@ fn run(asset_dir: String, testbed: bool, save: PathBuf, load: Option<Case>) {
     app.add_systems(
         PostUpdate,
         (
+            typography::correct_coverage
+                .after(bevy::ui::UiSystems::PostLayout)
+                .before(bevy::asset::AssetEventSystems),
             viewport.before(bevy::camera::CameraUpdateSystems),
             ui::markers
                 .after(bevy::camera::CameraUpdateSystems)
@@ -237,10 +244,12 @@ fn setup(
     assets: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut mats: ResMut<Assets<StandardMaterial>>,
+    fonts: Res<Assets<Font>>,
 ) {
     commands.insert_resource(Media {
-        font: assets.load("fonts/NanumGothic.ttf"),
-        bold: assets.load("fonts/NanumGothic-Bold.ttf"),
+        font: assets.load("fonts/Pretendard-Regular.otf"),
+        bold: assets.load("fonts/Pretendard-SemiBold.otf"),
+        light_bold: fonts.reserve_handle(),
         photo: assets.load("images/cat_portrait.png"),
     });
     commands.spawn((

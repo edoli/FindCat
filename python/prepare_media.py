@@ -9,8 +9,8 @@ from PIL import Image, ImageOps
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / 'assets'
 for d in ['audio','fonts','images']:(ASSETS/d).mkdir(parents=True,exist_ok=True)
-font_url='https://raw.githubusercontent.com/google/fonts/main/ofl/nanumgothic/NanumGothic-Regular.ttf'
-for name,url in [('NanumGothic.ttf',font_url),('NanumGothic-Bold.ttf','https://raw.githubusercontent.com/google/fonts/main/ofl/nanumgothic/NanumGothic-Bold.ttf'),('OFL.txt','https://raw.githubusercontent.com/google/fonts/main/ofl/nanumgothic/OFL.txt'),('FiraMono-OFL.txt','https://raw.githubusercontent.com/google/fonts/main/ofl/firamono/OFL.txt')]:
+font_base='https://raw.githubusercontent.com/orioncactus/pretendard/v1.3.9/'
+for name,url in [('Pretendard-Regular.otf',font_base+'packages/pretendard/dist/public/static/Pretendard-Regular.otf'),('Pretendard-SemiBold.otf',font_base+'packages/pretendard/dist/public/static/Pretendard-SemiBold.otf'),('Pretendard-OFL.txt',font_base+'LICENSE'),('FiraMono-OFL.txt','https://raw.githubusercontent.com/google/fonts/main/ofl/firamono/OFL.txt')]:
     dest=ASSETS/'fonts'/name
     if not dest.exists():urllib.request.urlretrieve(url,dest)
 photo=Image.open(ROOT/'reference/cat/20231121_000119_crop.jpg').convert('RGB')

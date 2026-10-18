@@ -6,6 +6,10 @@
 
 ## 웹 실행과 배포
 
+본문은 Pretendard Regular, 제목과 버튼은 SemiBold를 사용합니다. 글자 가장자리의 커버리지는 밝은 배경의 어두운 글자와 어두운 버튼의 밝은 글자를 구분해 보정합니다. 선형 색상으로 합성할 때 본문 획이 지나치게 가늘어지거나 밝은 버튼 글자가 번져 보이는 현상을 줄입니다. 보정은 글리프별로 한 번만 적용하므로 화면을 다시 열어도 누적되지 않습니다.
+
+`uv run --project python python python/validate_typography.py --url https://edoli.github.io/FindCat/`는 DPR 1 / 2에서 실제 게임 글자와 같은 글꼴의 브라우저 렌더링을 비교하고, UI를 반복해서 다시 그려도 글자 픽셀이 변하지 않는지 확인합니다. 비교 이미지는 `artifacts/typography`에 생성합니다.
+
 WebGL2를 지원하는 최신 PC 브라우저에서 실행하세요. 첫 입력 후 소리가 켜지며, 진행 상황은 해당 브라우저의 로컬 저장소에 자동 저장됩니다. 렌더링 해상도는 브라우저 창 크기 × 기기의 픽셀 배율(DPR)에 맞춥니다. 창 크기와 모니터 배율이 바뀌면 3D 화면과 글자도 해당 해상도로 다시 그립니다. UI 크기는 Bevy 안에서 조절하므로 완성된 캔버스를 CSS로 확대하지 않습니다. 글자는 grayscale antialiasing, 3D는 4× MSAA를 사용합니다.
 
 ```powershell

@@ -44,7 +44,13 @@ fn label(
     p.spawn((
         Text::new(s),
         TextFont {
-            font: if bold { m.bold.clone() } else { m.font.clone() },
+            font: if color == PAPER {
+                m.light_bold.clone()
+            } else if bold {
+                m.bold.clone()
+            } else {
+                m.font.clone()
+            },
             font_size: size,
             line_height: LineHeight::RelativeToFont(1.4),
             font_smoothing: FontSmoothing::AntiAliased,
@@ -612,7 +618,7 @@ fn field_hud(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, w: f32, celeb
                     NearText,
                     Text::new("가까이 가서 조사 [E]"),
                     TextFont {
-                        font: m.bold.clone(),
+                        font: m.light_bold.clone(),
                         font_size: 16.,
                         font_smoothing: FontSmoothing::AntiAliased,
                         ..default()
