@@ -179,6 +179,7 @@ fn run(asset_dir: String, testbed: bool, save: PathBuf, load: Option<Case>) {
     .register_type::<Mesh3d>()
     .register_type::<MeshMaterial3d<StandardMaterial>>()
     .register_type::<bevy::camera::primitives::Aabb>()
+    .register_type::<bevy::gltf::GltfSceneName>()
     .register_type::<bevy::gltf::GltfMeshName>()
     .register_type::<bevy::gltf::GltfMaterialName>()
     .register_type::<bevy::gltf::GltfExtras>()
