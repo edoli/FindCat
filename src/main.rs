@@ -3,6 +3,7 @@
 mod browser;
 mod navigation;
 mod presentation;
+mod render_compat;
 #[cfg(not(target_arch = "wasm32"))]
 mod testbed;
 mod typography;
@@ -217,6 +218,7 @@ fn run(asset_dir: String, testbed: bool, save: PathBuf, load: Option<Case>) {
     app.add_systems(
         PostUpdate,
         (
+            render_compat::correct_front_facing.before(bevy::asset::AssetEventSystems),
             typography::correct_coverage
                 .after(bevy::ui::UiSystems::PostLayout)
                 .before(bevy::asset::AssetEventSystems),

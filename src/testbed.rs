@@ -352,10 +352,46 @@ pub fn drive(
             done = true;
         }
         32 => {
+            if director.age < 10. {
+                return;
+            }
+            shot(&mut commands, &mut t, "19-home-play");
+            done = true;
+        }
+        33 => {
+            if director.age < 18. {
+                return;
+            }
+            shot(&mut commands, &mut t, "20-home-rest");
+            done = true;
+        }
+        34 => {
+            if director.age < 24. {
+                return;
+            }
+            shot(&mut commands, &mut t, "21-ending");
+            done = true;
+        }
+        35 => {
+            if c.phase != Phase::Title {
+                return;
+            }
+            let entered = t.modal_seen.get_or_insert_with(Instant::now);
+            if entered.elapsed().as_secs_f32() < 2. {
+                return;
+            }
+            shot(&mut commands, &mut t, "22-return-title");
+            done = true;
+        }
+        36 => {
             if t.changed.elapsed().as_secs_f32() > 2. {
                 assert!(t.camera_views.len() > 20);
                 assert!(t.ui_checks > 40);
-                let report = serde_json::json!({"passed":true,"checks":t.checks,"ui_bounds_checks":t.ui_checks,"camera_views":t.camera_views,"all_clues":c.count(),"deductions":c.chapter,"trust":c.trust,"wrong_choice_recovery":c.mistakes>0,"save_reload":true,"navigation":"all 8 real routes completed","screenshots":t.shots,"seconds":t.started.elapsed().as_secs_f32(),"hardware_input":false});
+                assert_eq!(c.phase, Phase::Title);
+                let completed = files.load.as_ref().expect("completed case retained");
+                assert_eq!(completed.phase, Phase::Reunion);
+                assert_eq!(completed.count(), 8);
+                let report = serde_json::json!({"passed":true,"checks":t.checks,"ui_bounds_checks":t.ui_checks,"camera_views":t.camera_views,"all_clues":completed.count(),"deductions":completed.chapter,"trust":completed.trust,"wrong_choice_recovery":completed.mistakes>0,"save_reload":true,"navigation":"all 8 real routes completed","ending_play":true,"ending_rest":true,"ending_card":true,"return_to_title":true,"screenshots":t.shots,"seconds":t.started.elapsed().as_secs_f32(),"hardware_input":false});
                 std::fs::write(
                     "artifacts/testbed-report.json",
                     serde_json::to_string_pretty(&report).unwrap(),
