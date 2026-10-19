@@ -66,7 +66,9 @@
       if (!boot || boot.dataset.failed) return;
       boot.dataset.failed = 'true';
       boot.style.display = 'grid';
-      document.getElementById('status').textContent = /memory|allocation|context lost/i.test(message)
+      document.getElementById('status').textContent = /shader|render_pipeline|GLSL|Validation Error/i.test(message)
+        ? '그래픽 셰이더를 준비하는 중 오류가 발생했어요. 아래 오류 내용을 확인해 주세요.'
+        : /memory|allocation|context lost/i.test(message)
         ? '그래픽 메모리가 부족하거나 화면 연결이 끊겼어요. 다른 탭을 닫은 뒤 다시 시도해 주세요.'
         : '게임을 불러오지 못했어요. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.';
       document.getElementById('boot-progress').hidden = true;

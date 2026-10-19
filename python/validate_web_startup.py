@@ -78,6 +78,24 @@ try:
             browser = engine.launch(headless=True, **launch)
             page = browser.new_page(**options)
             page.set_default_timeout(90000)
+            page.add_init_script("""(() => {
+                window.findcatShaderLinks = [];
+                const link = WebGL2RenderingContext.prototype.linkProgram;
+                WebGL2RenderingContext.prototype.linkProgram = function(program) {
+                    link.call(this, program);
+                    const shaders = this.getAttachedShaders(program);
+                    const source = stage => shaders.filter(s => this.getShaderParameter(s, this.SHADER_TYPE) === stage)
+                        .map(s => this.getShaderSource(s)).join(String.fromCharCode(10));
+                    const vertex = source(this.VERTEX_SHADER), fragment = source(this.FRAGMENT_SHADER);
+                    window.findcatShaderLinks.push({
+                        ok: this.getProgramParameter(program, this.LINK_STATUS),
+                        log: this.getProgramInfoLog(program),
+                        shadow: vertex.includes('prepass_io') && fragment.includes('gl_FragDepth'),
+                        fragment_uniforms: /\\buniform\\b/.test(fragment),
+                        fragment_inputs: (fragment.match(/(?:smooth|flat) in /g) || []).length,
+                    });
+                };
+            })();""")
             logs, errors = [], []
             def log(message):
                 logs.append(message)
@@ -101,11 +119,16 @@ try:
                     return gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER);
                 }""")
                 assert not any(name in renderer.lower() for name in ['swiftshader', 'llvmpipe', 'lavapipe', 'software rasterizer']), renderer
-                assert render['msaa'] == (4 if name == 'desktop' else 1), render
+                assert render['msaa'] == 4, render
                 assert render['text_antialiased'], render
                 assert render['physical'] == [round(v * render['dpr']) for v in render['logical']], render
                 assert render['viewport'] == render['physical'], render
                 assert page.locator('#boot').is_hidden(), page.locator('#status').inner_text()
+                shader_links = page.evaluate('window.findcatShaderLinks')
+                assert shader_links and all(link['ok'] for link in shader_links), shader_links
+                shadow_links = [link for link in shader_links if link['shadow']]
+                assert shadow_links, 'Expected opaque shadow pipeline'
+                assert all(not link['fragment_uniforms'] and link['fragment_inputs'] == 1 for link in shadow_links), shadow_links
                 page.screenshot(path=str(args.output / f'{name}-title.png'), timeout=90000)
                 image = Image.open(args.output / f'{name}-title.png').convert('RGB')
                 assert max(ImageStat.Stat(image).stddev) > 15, 'Blank title frame'
@@ -126,6 +149,7 @@ try:
                 awaitable_errors = [e for e in errors if 'Using exceptions for control flow' not in e]
                 assert not awaitable_errors, awaitable_errors
                 report = {'profile': name, 'passed': True, 'render': render, 'gpu_renderer': renderer,
+                          'linked_gpu_programs': len(shader_links), 'scalar_shadow_programs': len(shadow_links),
                           'start_input': 'touch' if options.get('has_touch') else 'mouse',
                           'elapsed_seconds': round(time.monotonic() - started, 2)}
                 reports.append(report)

@@ -219,6 +219,7 @@ fn run(asset_dir: String, testbed: bool, save: PathBuf, load: Option<Case>) {
         PostUpdate,
         (
             render_compat::correct_front_facing.before(bevy::asset::AssetEventSystems),
+            render_compat::specialize_opaque_depth.before(bevy::asset::AssetEventSystems),
             typography::correct_coverage
                 .after(bevy::ui::UiSystems::PostLayout)
                 .before(bevy::asset::AssetEventSystems),
@@ -259,16 +260,6 @@ fn setup(
     mut mats: ResMut<Assets<StandardMaterial>>,
     fonts: Res<Assets<Font>>,
 ) {
-    // High-DPI tablets otherwise allocate four full-resolution color/depth samples.
-    // Preserve the physical resolution and the independent glyph/UI antialiasing.
-    #[cfg(target_arch = "wasm32")]
-    let msaa = if browser::mobile() {
-        commands.insert_resource(bevy::light::DirectionalLightShadowMap { size: 1024 });
-        Msaa::Off
-    } else {
-        Msaa::Sample4
-    };
-    #[cfg(not(target_arch = "wasm32"))]
     let msaa = Msaa::Sample4;
     commands.insert_resource(Media {
         font: assets.load("fonts/Pretendard-Regular.otf"),
