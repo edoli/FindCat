@@ -132,6 +132,12 @@ try:
                 page.screenshot(path=str(args.output / f'{name}-title.png'), timeout=90000)
                 image = Image.open(args.output / f'{name}-title.png').convert('RGB')
                 assert max(ImageStat.Stat(image).stddev) > 15, 'Blank title frame'
+                if options.get('has_touch'):
+                    # Rotate before the first tap. Fullscreen entry is asynchronous
+                    # and Chromium forbids resizing its native fullscreen window.
+                    rotation = {'width': 924, 'height': 1480} if name.startswith('android-tablet') else {'width': 1194, 'height': 834}
+                    page.set_viewport_size(rotation)
+                    page.wait_for_function("width => Math.abs(JSON.parse(document.documentElement.getAttribute('data-findcat')).render.logical[0] - width) < 1", arg=rotation['width'], timeout=30000)
                 start = next(b for b in state()['buttons'] if b['action'] == 'Start')
                 # Playwright sends input only to its own headless page, never the OS.
                 if options.get('has_touch'):
@@ -139,13 +145,6 @@ try:
                 else:
                     page.mouse.click(start['x'], start['y'], delay=100)
                 page.wait_for_function("JSON.parse(document.documentElement.getAttribute('data-findcat')).case.phase.Story === 0", timeout=30000)
-                if options.get('has_touch'):
-                    # Chromium forbids a simulated window resize while fullscreen.
-                    # Leave the first-touch fullscreen before emulating rotation.
-                    page.evaluate("async () => { if (document.fullscreenElement) await document.exitFullscreen(); else if (document.webkitFullscreenElement) document.webkitExitFullscreen(); }")
-                    rotation = {'width': 924, 'height': 1480} if name.startswith('android-tablet') else {'width': 1194, 'height': 834}
-                    page.set_viewport_size(rotation)
-                    page.wait_for_function("width => Math.abs(JSON.parse(document.documentElement.getAttribute('data-findcat')).render.logical[0] - width) < 1", arg=rotation['width'], timeout=30000)
                 awaitable_errors = [e for e in errors if 'Using exceptions for control flow' not in e]
                 assert not awaitable_errors, awaitable_errors
                 report = {'profile': name, 'passed': True, 'render': render, 'gpu_renderer': renderer,
