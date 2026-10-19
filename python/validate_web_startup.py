@@ -127,6 +127,14 @@ try:
                 assert not any(name in renderer.lower() for name in ['swiftshader', 'llvmpipe', 'lavapipe', 'software rasterizer']), renderer
                 assert render['msaa'] == 4, render
                 assert render['text_antialiased'], render
+                assert render['cameras'] == 1, render
+                assert render['non_shadow_casters'] >= 48, render
+                assert render['bound_characters'] == 2, render
+                assert render['shadow_distance'] == 64, render
+                assert 0 < render['visible_ground_depth'] < render['shadow_distance'], render
+                assert {material['fairy'] for material in render['fading_materials']} == {False, True}, render
+                assert all(material['alpha'] < .001 if material['fairy'] else material['alpha'] > .99
+                           for material in render['fading_materials']), render
                 assert render['physical'] == [round(v * render['dpr']) for v in render['logical']], render
                 assert render['viewport'] == render['physical'], render
                 assert page.locator('#boot').is_hidden(), page.locator('#status').inner_text()
@@ -162,7 +170,7 @@ try:
                           'start_input': 'touch' if options.get('has_touch') else 'mouse',
                           'elapsed_seconds': round(time.monotonic() - started, 2)}
                 reports.append(report)
-                print(json.dumps(report), flush=True)
+                print(json.dumps({**report, 'render': {**render, 'fading_materials': len(render['fading_materials'])}}), flush=True)
                 if name == 'android-tablet':
                     page.evaluate("document.getElementById('game').getContext('webgl2').getExtension('WEBGL_lose_context').loseContext()")
                     page.wait_for_function("document.getElementById('boot').dataset.failed === 'true'", timeout=15000)

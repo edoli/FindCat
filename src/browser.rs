@@ -70,9 +70,20 @@ pub fn status(
     director: Res<presentation::Director>,
     window: Single<&Window, With<PrimaryWindow>>,
     ui_scale: Res<UiScale>,
-    camera: Single<(&Camera, &Msaa), With<WorldCamera>>,
+    camera: Single<(&Camera, &Msaa, &Projection, &GlobalTransform), With<WorldCamera>>,
     fonts: Query<(&TextFont, &Text, &ComputedNode, &UiGlobalTransform)>,
     mut ready: Local<bool>,
+    stats: (
+        Query<&Camera>,
+        Query<Has<bevy::light::NotShadowCaster>, With<Mesh3d>>,
+        Query<(
+            &presentation::FadingMaterial,
+            &MeshMaterial3d<StandardMaterial>,
+        )>,
+        Query<(), With<presentation::CharacterMaterialsBound>>,
+        Res<Assets<StandardMaterial>>,
+        Query<&bevy::light::CascadeShadowConfig, With<DirectionalLight>>,
+    ),
 ) {
     let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
         return;
@@ -103,6 +114,26 @@ pub fn status(
         return;
     };
     if root.has_attribute("data-testbed") {
+        let ground_depth = match camera.2 {
+            Projection::Orthographic(p) => {
+                let highest = camera.3.translation().y
+                    + camera.3.up().y.abs() * p.area.max.y.abs().max(p.area.min.y.abs())
+                    + camera.3.right().y.abs() * p.area.max.x.abs().max(p.area.min.x.abs());
+                Some((highest + 1.) / -camera.3.forward().y)
+            }
+            _ => None,
+        };
+        let fading: Vec<_> = stats
+            .2
+            .iter()
+            .filter_map(|(fade, handle)| {
+                stats.4.get(&handle.0).map(|material| {
+                    serde_json::json!({
+                        "fairy":fade.fairy,"alpha":material.base_color.alpha(),
+                    })
+                })
+            })
+            .collect();
         let buttons: Vec<_> = buttons
             .iter()
             .filter(|(_, n, _, v)| v.get() && n.size().min_element() > 0.)
@@ -143,7 +174,12 @@ pub fn status(
                 "dpr":window.scale_factor(),"ui_scale":ui_scale.0,
                 "viewport":camera.0.physical_viewport_size().map(|s|s.to_array()),
                 "msaa":camera.1.samples(),
-                "text_antialiased":fonts.iter().all(|(f,_,_,_)|f.font_smoothing == FontSmoothing::AntiAliased)},
+                "text_antialiased":fonts.iter().all(|(f,_,_,_)|f.font_smoothing == FontSmoothing::AntiAliased),
+                "cameras":stats.0.iter().count(),
+                "non_shadow_casters":stats.1.iter().filter(|excluded|*excluded).count(),
+                "bound_characters":stats.3.iter().count(),"fading_materials":fading,
+                "shadow_distance":stats.5.iter().filter_map(|config|config.bounds.last()).copied().fold(0_f32,f32::max),
+                "visible_ground_depth":ground_depth},
             "cat_scale":cat.iter().next().map(|t|t.scale.to_array())});
         let _ = root.set_attribute("data-findcat", &state.to_string());
     }

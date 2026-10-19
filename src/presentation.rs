@@ -1,6 +1,8 @@
 //! Camera direction, ambient life, and small character performances.
 use crate::*;
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
+use bevy::light::NotShadowCaster;
+use bevy::world_serialization::{WorldInstance, WorldInstanceSpawner};
 
 #[derive(Resource)]
 pub struct Director {
@@ -119,56 +121,44 @@ pub fn character_opacity(phase: &Phase, age: f32, fairy: bool) -> f32 {
 
 #[derive(Component)]
 pub struct FadingMaterial {
-    fairy: bool,
+    pub(crate) fairy: bool,
     color: Color,
     emissive: LinearRgba,
     mode: AlphaMode,
 }
 
-pub fn fade_characters(
+#[derive(Component)]
+pub struct CharacterMaterialsBound;
+
+/// World instances are asynchronous. Wait for the complete hierarchy, then walk
+/// just the two character subtrees once; background meshes never enter this path.
+pub fn bind_character_materials(
     mut commands: Commands,
     game: Res<Session>,
     director: Res<Director>,
-    parents: Query<&ChildOf>,
-    roots: Query<Has<Fairy>, Or<(With<Cat>, With<Fairy>)>>,
-    mut meshes: Query<(
-        Entity,
-        &mut MeshMaterial3d<StandardMaterial>,
-        Option<&FadingMaterial>,
-    )>,
+    spawner: Res<WorldInstanceSpawner>,
+    children: Query<&Children>,
+    roots: Query<
+        (Entity, Has<Fairy>, &WorldInstance),
+        (
+            Or<(With<Cat>, With<Fairy>)>,
+            Without<CharacterMaterialsBound>,
+        ),
+    >,
+    mut meshes: Query<&mut MeshMaterial3d<StandardMaterial>, Without<FadingMaterial>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    for (entity, mut handle, cached) in &mut meshes {
-        if let Some(fade) = cached {
-            let alpha = character_opacity(&game.0.phase, director.age, fade.fairy);
-            let color = fade.color.with_alpha(fade.color.alpha() * alpha);
-            let emissive = fade.emissive * alpha;
-            let mode = if alpha < 1. {
-                AlphaMode::Blend
-            } else {
-                fade.mode
-            };
-            // Avoid uploading all character materials every frame after a fade has finished.
-            let changed = materials.get(&handle.0).is_some_and(|material| {
-                material.base_color != color
-                    || material.emissive != emissive
-                    || material.alpha_mode != mode
-            });
-            if changed {
-                if let Some(mut material) = materials.get_mut(&handle.0) {
-                    material.base_color = color;
-                    material.emissive = emissive;
-                    material.alpha_mode = mode;
-                }
-            }
-        } else {
-            let Some(fairy) = parents
-                .iter_ancestors(entity)
-                .find_map(|e| roots.get(e).ok())
-            else {
+    for (root, fairy, instance) in &roots {
+        if !spawner.instance_is_ready(**instance) {
+            continue;
+        }
+        let mut pending = false;
+        for entity in std::iter::once(root).chain(children.iter_descendants(root)) {
+            let Ok(mut handle) = meshes.get_mut(entity) else {
                 continue;
             };
             let Some(mut material) = materials.get(&handle.0).cloned() else {
+                pending = true;
                 continue;
             };
             let fade = FadingMaterial {
@@ -185,6 +175,107 @@ pub fn fade_characters(
             }
             handle.0 = materials.add(material);
             commands.entity(entity).insert(fade);
+        }
+        if !pending {
+            commands.entity(root).insert(CharacterMaterialsBound);
+        }
+    }
+}
+
+pub fn fade_characters(
+    game: Res<Session>,
+    director: Res<Director>,
+    meshes: Query<(&MeshMaterial3d<StandardMaterial>, &FadingMaterial)>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut previous: Local<Option<[f32; 2]>>,
+) {
+    let alphas = [
+        character_opacity(&game.0.phase, director.age, false),
+        character_opacity(&game.0.phase, director.age, true),
+    ];
+    // The binder initializes new materials at the current opacity. With no fade
+    // in progress there is no need to visit even the cached character meshes.
+    let before = *previous;
+    if before == Some(alphas) {
+        return;
+    }
+    *previous = Some(alphas);
+    for (handle, fade) in &meshes {
+        let class = usize::from(fade.fairy);
+        let alpha = alphas[class];
+        if before.is_some_and(|values| values[class] == alpha) {
+            continue;
+        }
+        let color = fade.color.with_alpha(fade.color.alpha() * alpha);
+        let emissive = fade.emissive * alpha;
+        let mode = if alpha < 1. {
+            AlphaMode::Blend
+        } else {
+            fade.mode
+        };
+        if let Some(mut material) = materials.get_mut(&handle.0) {
+            material.base_color = color;
+            material.emissive = emissive;
+            material.alpha_mode = mode;
+        }
+    }
+}
+
+#[cfg(test)]
+mod material_tests {
+    use super::*;
+
+    #[test]
+    fn cached_character_materials_follow_escape_fairy_and_reunion_fades() {
+        let mut app = App::new();
+        app.init_resource::<Session>()
+            .init_resource::<Director>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .add_systems(Update, fade_characters);
+        let mut handles = Vec::new();
+        for fairy in [false, true] {
+            let material = StandardMaterial::default();
+            let fade = FadingMaterial {
+                fairy,
+                color: material.base_color,
+                emissive: material.emissive,
+                mode: material.alpha_mode,
+            };
+            let handle = app
+                .world_mut()
+                .resource_mut::<Assets<StandardMaterial>>()
+                .add(material);
+            app.world_mut()
+                .spawn((MeshMaterial3d(handle.clone()), fade));
+            handles.push(handle);
+        }
+        for (phase, age, cat_alpha, fairy_alpha) in [
+            (Phase::Title, 0., 1., 0.),
+            (Phase::Story(1), 1.075, 0.5, 0.),
+            (Phase::Story(2), 0., 0., 0.),
+            (Phase::Story(3), 1., 0., 0.5),
+            (Phase::Story(3), 2., 0., 1.),
+            (Phase::Reunion, 7., 1., 0.),
+            (Phase::Title, 0., 1., 0.),
+        ] {
+            app.world_mut().resource_mut::<Session>().0.phase = phase;
+            app.world_mut().resource_mut::<Director>().age = age;
+            app.update();
+            // Repeating an unchanged frame must preserve the same values too.
+            app.update();
+            let materials = app.world().resource::<Assets<StandardMaterial>>();
+            for (handle, alpha) in handles.iter().zip([cat_alpha, fairy_alpha]) {
+                let material = materials.get(handle).unwrap();
+                assert!((material.base_color.alpha() - alpha).abs() < 0.001);
+                assert_eq!(
+                    material.alpha_mode,
+                    if alpha < 1. {
+                        AlphaMode::Blend
+                    } else {
+                        AlphaMode::Opaque
+                    }
+                );
+            }
         }
     }
 }
@@ -304,6 +395,7 @@ pub fn populate(
                 seed,
                 origin: at,
             },
+            NotShadowCaster,
         ));
     }
     let wing = meshes.add(Sphere::new(1.));
@@ -345,6 +437,7 @@ pub fn populate(
                 seed: i as f32 * 0.9,
                 origin: Vec3::new(-0.2, 1.2, 1.),
             },
+            NotShadowCaster,
         ));
     }
     let bird_mesh = meshes.add(Cuboid::new(0.14, 0.022, 0.045));
@@ -383,6 +476,7 @@ pub fn populate(
                 seed: i as f32,
                 origin: Vec3::ZERO,
             },
+            NotShadowCaster,
         ));
     }
     commands.spawn((
@@ -399,6 +493,7 @@ pub fn populate(
             seed: 0.,
             origin: Vec3::ZERO,
         },
+        NotShadowCaster,
     ));
     let tear = materials.add(Color::srgb(0.36, 0.68, 0.85));
     for seed in [-1., 1.] {
@@ -412,6 +507,7 @@ pub fn populate(
                 seed,
                 origin: Vec3::ZERO,
             },
+            NotShadowCaster,
         ));
     }
 }
@@ -628,6 +724,7 @@ fn burst(commands: &mut Commands, e: &Effects, at: Vec3, happy: bool) {
                 life: if happy { 2.8 } else { 1.2 },
                 age: 0.,
             },
+            NotShadowCaster,
         ));
     }
 }

@@ -23,6 +23,9 @@ use std::{collections::VecDeque, path::PathBuf};
 // The cat's model is 1.34 units high; the detective is 1.45 * 0.72 units.
 // Keep a believable pet-to-person ratio in every scene, including the escape.
 const CAT_SCALE: f32 = 0.28;
+// The 30-unit camera rig's widest view reaches the ground before depth 50.
+// Leave margin for scene props while avoiding the engine's 150-unit shadow volume.
+const SHADOW_VIEW_DISTANCE: f32 = 64.;
 
 #[derive(Resource, Default)]
 pub struct Session(pub Case);
@@ -201,6 +204,7 @@ fn run(asset_dir: String, testbed: bool, save: PathBuf, load: Option<Case>) {
             movement,
             presentation::direct,
             animate,
+            presentation::bind_character_materials,
             presentation::fade_characters,
             presentation::rig_parts,
             presentation::animate_parts,
@@ -301,6 +305,11 @@ fn setup(
             shadow_maps_enabled: true,
             ..default()
         },
+        bevy::light::CascadeShadowConfigBuilder {
+            maximum_distance: SHADOW_VIEW_DISTANCE,
+            ..default()
+        }
+        .build(),
         Transform::from_xyz(-6., 12., 8.).looking_at(Vec3::ZERO, Vec3::Y),
     ));
     commands.spawn((
@@ -318,16 +327,7 @@ fn setup(
         Transform::from_xyz(12., 17.5, 23.).looking_at(Vec3::new(0., 0., 0.3), Vec3::Y),
         WorldCamera,
         msaa,
-    ));
-    commands.spawn((
-        Camera2d,
-        Camera {
-            order: 1,
-            clear_color: bevy::camera::ClearColorConfig::None,
-            ..default()
-        },
         IsDefaultUiCamera,
-        msaa,
         bevy::ui_render::UiAntiAlias::On,
     ));
     let ring = meshes.add(Torus::new(0.23, 0.26));
@@ -342,6 +342,7 @@ fn setup(
             MeshMaterial3d(material.clone()),
             Transform::from_xyz(c.position[0], 0.20, c.position[1]),
             Beacon(id),
+            bevy::light::NotShadowCaster,
         ));
     }
     commands.spawn((

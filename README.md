@@ -26,6 +26,10 @@ Galaxy Tab S8 Ultra의 Adreno 730 진단에서는 동적으로 선택한 mesh un
 
 데스크톱·Android 태블릿·iPad WebKit의 시작 화면, 터치 입력, 회전 후 해상도, 다운로드 실패 안내는 `uv run --locked --project python python python/validate_web_startup.py --url https://edoli.github.io/FindCat/`로 검사합니다. Android 설정은 Galaxy Tab S8 Ultra의 2960 × 1848 화면과 터치를 호스트 GPU에서 검사하며 실제 Adreno GPU를 에뮬레이션하지 않습니다. `uv run --locked --project python playwright install chromium webkit`으로 검사 브라우저를 설치합니다. Chromium 검사에서 소프트웨어 렌더링을 허용하지 않으며, GPU가 없는 GitHub Actions에서는 게임 규칙 테스트와 빌드만 수행합니다. 실제 태블릿 GPU는 별도 기기 확인이 필요합니다.
 
+3D 카메라 하나에서 UI도 합성하여 별도의 2D 카메라와 그 화면 복사를 제거했습니다. 글자 atlas·DPR·4× MSAA는 유지합니다. 먼지·반짝임·안내 표식·축하 입자는 그림자를 만들지 않으며, 캐릭터·건물·소품의 그림자는 유지합니다. 그림자 맵은 2048이고 최대 거리는 이 게임의 30-unit 카메라와 최대 줌 범위를 덮는 64입니다. `?testbed`에서 실제 화면의 바닥까지 필요한 깊이가 이 범위 안인지 검사합니다. 고양이·요정의 재질은 비동기 모델 인스턴스가 준비된 뒤 각 서브트리를 한 번만 등록하고, 이후에는 불투명도가 변한 캐릭터만 갱신합니다.
+
+프레임 비교는 `uv run --locked --project python python python/profile_web_frames.py --output artifacts/performance`로 실행합니다. 기본 2960×1848에서 제목·놀이 장면의 프레임 간격, 앱 콜백 시간, draw·blit 수와 지원 시 GPU 쿼리 경과시간을 기록합니다. 콜백에는 GL 드라이버 대기가, GPU 쿼리 구간에는 CPU 명령 제출 대기가 포함될 수 있으므로 순수 CPU/GPU 실행 시간으로 해석하지 않습니다. 비교는 다른 GPU 검사와 동시에 실행하지 마세요. `python/validate_render_optimizations.py`는 저장 불러오기, 고양이 퇴장·요정 등장 페이드, 탐색 최대 줌·전체 보기에서 카메라·재질 등록·그림자 범위를 검사합니다. 호스트 GPU 수치를 실제 Android 성능으로 간주하지 않습니다.
+
 ```powershell
 rustup target add wasm32-unknown-unknown
 cargo install trunk --version 0.21.14 --locked
