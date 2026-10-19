@@ -220,6 +220,7 @@ fn run(asset_dir: String, testbed: bool, save: PathBuf, load: Option<Case>) {
         (
             render_compat::correct_front_facing.before(bevy::asset::AssetEventSystems),
             render_compat::specialize_opaque_depth.before(bevy::asset::AssetEventSystems),
+            render_compat::specialize_shadow_mesh_lookup.before(bevy::asset::AssetEventSystems),
             typography::correct_coverage
                 .after(bevy::ui::UiSystems::PostLayout)
                 .before(bevy::asset::AssetEventSystems),

@@ -87,12 +87,18 @@ try:
                     const source = stage => shaders.filter(s => this.getShaderParameter(s, this.SHADER_TYPE) === stage)
                         .map(s => this.getShaderSource(s)).join(String.fromCharCode(10));
                     const vertex = source(this.VERTEX_SHADER), fragment = source(this.FRAGMENT_SHADER);
+                    const meshSlots = [...vertex.matchAll(/_group_2_binding_0_vs\\[(\\d+)\\]\\.world_from_local/g)]
+                        .map(match => Number(match[1]));
+                    const meshBatchSize = vertex.match(/_group_2_binding_0_vs\\[(\\d+)\\];/);
                     window.findcatShaderLinks.push({
                         ok: this.getProgramParameter(program, this.LINK_STATUS),
                         log: this.getProgramInfoLog(program),
                         shadow: vertex.includes('prepass_io') && fragment.includes('gl_FragDepth'),
                         fragment_uniforms: /\\buniform\\b/.test(fragment),
                         fragment_inputs: (fragment.match(/(?:smooth|flat) in /g) || []).length,
+                        static_mesh_slots: [...new Set(meshSlots)],
+                        mesh_batch_size: meshBatchSize ? Number(meshBatchSize[1]) : null,
+                        dynamic_mesh_transform: /_group_2_binding_0_vs\\[(?!\\d+\\])[^\\]]+\\]\\.world_from_local/.test(vertex),
                     });
                 };
             })();""")
@@ -129,6 +135,9 @@ try:
                 shadow_links = [link for link in shader_links if link['shadow']]
                 assert shadow_links, 'Expected opaque shadow pipeline'
                 assert all(not link['fragment_uniforms'] and link['fragment_inputs'] == 1 for link in shadow_links), shadow_links
+                assert all(not link['dynamic_mesh_transform'] and link['mesh_batch_size']
+                           and sorted(link['static_mesh_slots']) == list(range(link['mesh_batch_size']))
+                           for link in shadow_links), shadow_links
                 page.screenshot(path=str(args.output / f'{name}-title.png'), timeout=90000)
                 image = Image.open(args.output / f'{name}-title.png').convert('RGB')
                 assert max(ImageStat.Stat(image).stddev) > 15, 'Blank title frame'
@@ -149,6 +158,7 @@ try:
                 assert not awaitable_errors, awaitable_errors
                 report = {'profile': name, 'passed': True, 'render': render, 'gpu_renderer': renderer,
                           'linked_gpu_programs': len(shader_links), 'scalar_shadow_programs': len(shadow_links),
+                          'static_shadow_mesh_slots': [len(link['static_mesh_slots']) for link in shadow_links],
                           'start_input': 'touch' if options.get('has_touch') else 'mouse',
                           'elapsed_seconds': round(time.monotonic() - started, 2)}
                 reports.append(report)

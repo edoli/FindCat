@@ -20,7 +20,9 @@ WebGL2를 지원하는 최신 브라우저에서 실행하세요. 첫 입력 후
 
 불투명 직교 그림자의 깊이 패스는 `assets/shaders/opaque_depth.wesl`에서 깊이 값 하나만 입력받아 기록합니다. 이 패스의 사용하지 않는 재질 uniform·varying 의존성을 제거하며, 알파 검사·디더링·노멀·모션·deferred 패스는 기존 셰이더를 사용합니다. 검증기는 실제 GPU에서 GLSL 프로그램의 연결 성공과 그림자 fragment의 단일 입력·uniform 없음도 확인합니다.
 
-Galaxy Tab S8 Ultra의 Adreno 730에서는 위 특수화 이후에도 프로그램 연결 실패가 보고되어, 해당 기기의 문제 해결은 아직 확인되지 않았습니다. `/gpu-diagnostics/`에서 현재/이전 그림자 셰이더와 다른 시작 셰이더를 개별 연결하고, 정점 출력·깊이 출력 등의 비교 검사를 실행할 수 있습니다. 게임은 실패한 실제 GLSL 두 개만 이 사이트의 로컬 저장소에 보관하며, 진단 페이지가 이를 우선 검사합니다. 셰이더를 수정하거나 렌더링 품질을 낮추는 기능은 아닙니다. 결과는 화면에 표시하고 JSON으로 저장할 수 있으며 외부로 전송하지 않습니다. 데스크톱 GPU에서의 통과는 Adreno에서의 통과를 뜻하지 않습니다.
+Galaxy Tab S8 Ultra의 Adreno 730 진단에서는 동적으로 선택한 mesh uniform의 변환이 보간된 그림자 깊이에 반영될 때만 프로그램 연결이 실패했습니다. 같은 정점 셰이더의 고정 깊이 출력, 같은 깊이 셰이더의 상수 인덱스 접근은 통과했습니다. `render_compat::specialize_shadow_mesh_lookup`은 WebGL2의 직교 그림자 깊이 에뮬레이션에서만 변환 행렬을 상수 주소의 슬롯 분기로 읽습니다. 슬롯 수는 Bevy의 실제 binding 정의에서 가져오며 인스턴싱·변환·그림자 깊이·버퍼 배치는 유지합니다. `python/validate_shadow_depth.py`는 서로 다른 변환의 23개 인스턴스, 시작 인덱스, 마지막 슬롯, 버퍼 오프셋을 실제 GPU에서 그려 원본과 Depth32Float의 비트를 비교합니다. 데스크톱 GPU의 검증 결과와 S8에서의 최종 실행 확인은 구분해야 합니다.
+
+`/gpu-diagnostics/?v=2`에서 현재/이전 그림자 셰이더와 다른 시작 셰이더를 개별 연결하고, 정점 출력·깊이 출력 등의 비교 검사를 실행할 수 있습니다. 게임은 실패한 실제 GLSL 두 개만 이 사이트의 로컬 저장소에 보관하며, 진단 페이지가 이를 검사합니다. 이전 실패 기록 및 비교 검사의 실패와 현재 게임 셰이더의 실패 수를 구분하여 표시합니다. 진단은 게임의 셰이더나 렌더링 품질을 바꾸지 않으며 결과를 외부로 전송하지 않습니다.
 
 데스크톱·Android 태블릿·iPad WebKit의 시작 화면, 터치 입력, 회전 후 해상도, 다운로드 실패 안내는 `uv run --locked --project python python python/validate_web_startup.py --url https://edoli.github.io/FindCat/`로 검사합니다. Android 설정은 Galaxy Tab S8 Ultra의 2960 × 1848 화면과 터치를 호스트 GPU에서 검사하며 실제 Adreno GPU를 에뮬레이션하지 않습니다. `uv run --locked --project python playwright install chromium webkit`으로 검사 브라우저를 설치합니다. Chromium 검사에서 소프트웨어 렌더링을 허용하지 않으며, GPU가 없는 GitHub Actions에서는 게임 규칙 테스트와 빌드만 수행합니다. 실제 태블릿 GPU는 별도 기기 확인이 필요합니다.
 

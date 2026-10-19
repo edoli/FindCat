@@ -1,6 +1,6 @@
 const status = document.getElementById('status');
 const output = document.getElementById('results');
-const report = {version: 1, date: new Date().toISOString(), userAgent: navigator.userAgent, cases: []};
+const report = {version: 2, date: new Date().toISOString(), userAgent: navigator.userAgent, cases: []};
 const lines = [];
 const write = line => { lines.push(line); output.textContent = lines.join('\n'); };
 const pause = () => new Promise(resolve => setTimeout(resolve, 20));
@@ -100,15 +100,15 @@ try {
   for (const name of ['MAX_VERTEX_UNIFORM_BLOCKS', 'MAX_FRAGMENT_UNIFORM_BLOCKS', 'MAX_UNIFORM_BLOCK_SIZE', 'MAX_VARYING_VECTORS', 'MAX_VERTEX_OUTPUT_COMPONENTS', 'MAX_FRAGMENT_INPUT_COMPONENTS']) {
     report.limits[name] = gl.getParameter(gl[name]);
   }
-  write(`진단 v1\nGPU: ${report.gpu}\n`);
+  write(`진단 v2\nGPU: ${report.gpu}\n`);
   if (/swiftshader|llvmpipe|software rasterizer/i.test(report.gpu)) throw new Error('현재 브라우저가 소프트웨어 렌더러를 사용하고 있습니다. GPU 검사를 진행하지 않았습니다.');
-  const response = await fetch('programs.json');
+  const response = await fetch('programs.json?v=2');
   if (!response.ok) throw new Error(`셰이더 자료를 불러오지 못했습니다: HTTP ${response.status}`);
   const fixtures = await response.json();
   let captured = [];
   try { captured = JSON.parse(localStorage.getItem('findcat.failed-shaders.v1') || '[]'); } catch {}
   report.captured = captured;
-  write(`이 기기에서 저장된 실패 셰이더: ${captured.length}개`);
+  write(`저장된 실패 셰이더: ${captured.length}개 (이전 실행 기록 포함)`);
   status.textContent = '기본 GPU 검사 중…';
   const simpleVertex = '#version 300 es\nprecision highp float;\nout float diagnostic_depth;\nvoid main() { gl_Position = vec4(0.0,0.0,0.5,1.0); diagnostic_depth = 0.5; }';
   await run(gl, 'control-color', simpleVertex, '#version 300 es\nprecision highp float;\nout vec4 color;\nvoid main() { color = vec4(1.0); }');
@@ -138,8 +138,12 @@ try {
       await run(gl, `${program.id}/${variant.id}`, variant.vertex, variant.fragment);
     }
   }
-  const failures = report.cases.filter(c => !c.linked).length;
-  status.textContent = `검사 완료 · ${report.cases.length}개 중 ${failures}개 연결 실패`;
+  const current = report.cases.filter(c => c.id.startsWith('current-') && !c.id.includes('/'));
+  const currentFailed = current.filter(c => !c.linked).length;
+  report.currentGame = {total: current.length, failed: currentFailed};
+  const comparisonFailures = report.cases.filter(c => !c.linked).length - currentFailed;
+  status.textContent = `현재 게임 셰이더: ${current.length}개 중 ${currentFailed}개 실패 · 이전/비교 검사: ${comparisonFailures}개 실패`;
+  write(`\n현재 게임 셰이더: ${current.length}개 중 ${currentFailed}개 실패`);
   write('\n위 결과를 복사하거나 이 화면을 캡처해 주세요.');
   gl.getExtension('WEBGL_lose_context')?.loseContext();
 } catch (error) {
