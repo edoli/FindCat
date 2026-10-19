@@ -330,7 +330,12 @@ fn setup(
         IsDefaultUiCamera,
         bevy::ui_render::UiAntiAlias::On,
     ));
-    let ring = meshes.add(Torus::new(0.23, 0.26));
+    let ring = meshes.add(
+        Torus::new(0.23, 0.26)
+            .mesh()
+            .major_resolution(32)
+            .minor_resolution(8),
+    );
     let material = mats.add(StandardMaterial {
         base_color: Color::srgb(1., 0.79, 0.32),
         emissive: LinearRgba::rgb(0.45, 0.19, 0.035),

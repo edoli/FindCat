@@ -24,7 +24,7 @@ args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=True)
 
 INSTRUMENT = r'''(() => {
-  const state = {gl:null, ext:null, enabled:false, frames:[], pending:[], counts:{draw:0, blit:0, framebuffer:0}};
+  const state = {gl:null, ext:null, enabled:false, frames:[], pending:[], counts:{draw:0, blit:0, framebuffer:0, elements:0}};
   const getContext = HTMLCanvasElement.prototype.getContext;
   HTMLCanvasElement.prototype.getContext = function(kind, ...options) {
     const gl = getContext.call(this, kind, ...options);
@@ -37,7 +37,16 @@ INSTRUMENT = r'''(() => {
   for (const [name, counter] of Object.entries({drawArrays:'draw', drawElements:'draw',
       drawArraysInstanced:'draw', drawElementsInstanced:'draw', blitFramebuffer:'blit', bindFramebuffer:'framebuffer'})) {
     const original = proto[name];
-    proto[name] = function(...args) { if (this === state.gl) state.counts[counter]++; return original.apply(this,args); };
+    proto[name] = function(...args) {
+      if (this === state.gl) {
+        state.counts[counter]++;
+        if (counter === 'draw') {
+          const arrays = name.startsWith('drawArrays');
+          state.counts.elements += args[arrays ? 2 : 1] * (name.endsWith('Instanced') ? args[arrays ? 3 : 4] : 1);
+        }
+      }
+      return original.apply(this,args);
+    };
   }
   const raf = requestAnimationFrame.bind(window);
   window.requestAnimationFrame = callback => raf(timestamp => {
@@ -52,6 +61,7 @@ INSTRUMENT = r'''(() => {
       if (query) gl.endQuery(ext.TIME_ELAPSED_EXT);
       const frame = {timestamp, cpu_ms:performance.now()-start, gpu_ms:null,
         draw:state.counts.draw-before.draw, blit:state.counts.blit-before.blit,
+        elements:state.counts.elements-before.elements,
         framebuffer:state.counts.framebuffer-before.framebuffer};
       if (frame.draw) {
         state.frames.push(frame);
@@ -82,6 +92,7 @@ INSTRUMENT = r'''(() => {
       frames:state.frames.length, interval_ms:summary(intervals),
       cpu_callback_ms:summary(state.frames.map(f=>f.cpu_ms)),gpu_ms:summary(state.frames.map(f=>f.gpu_ms)),
       draw_calls:summary(state.frames.map(f=>f.draw)),blits:summary(state.frames.map(f=>f.blit)),
+      submitted_elements:summary(state.frames.map(f=>f.elements)),
       framebuffer_binds:summary(state.frames.map(f=>f.framebuffer))};
   };
 })();'''

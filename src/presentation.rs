@@ -364,7 +364,8 @@ pub fn populate(
             Visibility::Hidden,
         ));
     }
-    let dot = meshes.add(Sphere::new(0.025));
+    // These motes cover only a few pixels; avoid hundreds of triangles per dot.
+    let dot = meshes.add(Sphere::new(0.025).mesh().ico(1).unwrap());
     let gold = materials.add(StandardMaterial {
         base_color: Color::srgb(1., 0.73, 0.24),
         emissive: LinearRgba::rgb(0.55, 0.28, 0.04),
@@ -398,7 +399,7 @@ pub fn populate(
             NotShadowCaster,
         ));
     }
-    let wing = meshes.add(Sphere::new(1.));
+    let wing = meshes.add(Sphere::new(1.).mesh().uv(12, 8));
     for i in 0..6 {
         let seed = i as f32 * 1.7;
         let at = Vec3::new(-2. + seed.sin() * 3., 0.9, 2.7 + seed.cos() * 1.4);
@@ -480,7 +481,14 @@ pub fn populate(
         ));
     }
     commands.spawn((
-        Mesh3d(meshes.add(Torus::new(0.27, 0.30))),
+        Mesh3d(
+            meshes.add(
+                Torus::new(0.27, 0.30)
+                    .mesh()
+                    .major_resolution(32)
+                    .minor_resolution(8),
+            ),
+        ),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::srgb(0.18, 0.51, 0.43),
             emissive: LinearRgba::rgb(0.02, 0.12, 0.08),

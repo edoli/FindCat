@@ -14,6 +14,9 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "models"
 OUT.mkdir(parents=True, exist_ok=True)
 random.seed(41)
+# Background detail has a much smaller projected size than the hero characters.
+# Apply the same authored scenery budget on every platform, without device checks.
+SCENERY = False
 
 def material(name, color, metallic=0):
     m = bpy.data.materials.new(name)
@@ -47,16 +50,24 @@ def cube(name, pos, scale, mat, bevel=.05):
     o=bpy.context.object; o.scale=(scale[0],scale[2],scale[1])
     bpy.ops.object.transform_apply(location=False,rotation=False,scale=True)
     if bevel:
-        b=o.modifiers.new('Soft handmade edges','BEVEL'); b.width=bevel; b.segments=2
+        b=o.modifiers.new('Soft handmade edges','BEVEL'); b.width=bevel; b.segments=1 if SCENERY and bevel <= .025 else 2
         bpy.ops.object.modifier_apply(modifier=b.name)
         o.modifiers.new('Weighted normals','WEIGHTED_NORMAL')
     return finish(o,name,mat)
 def ball(name,pos,scale,mat,segments=20):
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=segments,ring_count=12, radius=1,location=p(pos))
+    rings = 12
+    # The paw trail is a clue inspected at close range: preserve its silhouette.
+    if SCENERY and not name.startswith('Paw '):
+        extent = max(scale)
+        # Keep large canopies round; tiny petals and leaves do not need 12 rings.
+        rings = 10 if extent >= .35 else 8 if extent >= .15 else 6 if extent >= .07 else 4
+        segments = min(segments, 16 if extent >= .35 else 12 if extent >= .15 else 10 if extent >= .07 else 8)
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=segments,ring_count=rings, radius=1,location=p(pos))
     o=bpy.context.object; o.scale=(scale[0],scale[2],scale[1])
     for f in o.data.polygons:f.use_smooth=True
     return finish(o,name,mat)
 def cyl(name,pos,r,depth,mat,vertices=24):
+    if SCENERY and r < .04:vertices=min(vertices,8)
     bpy.ops.mesh.primitive_cylinder_add(vertices=vertices,radius=r,depth=depth,location=p(pos))
     return finish(bpy.context.object,name,mat)
 def beam(name,a,b,r,mat):
@@ -64,7 +75,8 @@ def beam(name,a,b,r,mat):
     o=cyl(name,tuple((a[i]+b[i])/2 for i in range(3)),r,d.length,mat,12)
     o.rotation_euler=d.to_track_quat('Z','Y').to_euler();return o
 def curve(name,pts,r,mat):
-    c=bpy.data.curves.new(name,'CURVE');c.dimensions='3D';c.bevel_depth=r;c.bevel_resolution=3
+    c=bpy.data.curves.new(name,'CURVE');c.dimensions='3D';c.bevel_depth=r;c.bevel_resolution=1 if SCENERY else 3
+    if SCENERY:c.resolution_u=6
     s=c.splines.new('BEZIER');s.bezier_points.add(len(pts)-1)
     for bp,pt in zip(s.bezier_points,pts):bp.co=p(pt);bp.handle_left_type='AUTO';bp.handle_right_type='AUTO'
     o=bpy.data.objects.new(name,c);bpy.context.collection.objects.link(o);o.data.materials.append(M[mat]);return o
@@ -320,18 +332,36 @@ def world():
         ball('Paw pad in earth',(x,.16,z),(.065,.008,.06),'pale_wood',12)
         for dx,dz in [(-.06,-.065),(0,-.085),(.06,-.065)]:ball('Paw toe',(x+dx,.16,z+dz),(.026,.008,.028),'pale_wood',10)
     enrich_neighborhood()
-    # Bake static scenery by material: hundreds of hand-built props, a few draw calls.
+    # Preserve material batching. Splitting this small island into spatial cells
+    # cost more draw calls than it saved geometry in the actual close-up view.
     original=list(bpy.context.scene.objects)
-    (OUT/'neighborhood-manifest.json').write_text(json.dumps({'objects_before_batching':len(original),'named_props':sorted(o.name for o in original)},indent=2))
+    named_props=sorted(o.name for o in original)
     bpy.ops.object.select_all(action='SELECT');bpy.context.view_layer.objects.active=original[0]
     bpy.ops.object.convert(target='MESH')
+    # Store batches in a shared coordinate frame. A rotated/scaled first object
+    # otherwise makes the merged mesh's transformed AABB needlessly oversized.
+    bpy.ops.object.transform_apply(location=True,rotation=True,scale=True)
     batches={}
     for obj in list(bpy.context.scene.objects):
-        if obj.type=='MESH':batches.setdefault(obj.data.materials[0].name if obj.data.materials else 'none',[]).append(obj)
+        if obj.type=='MESH':
+            mat=obj.data.materials[0].name if obj.data.materials else 'none'
+            batches.setdefault(mat,[]).append(obj)
     for mat,objects in batches.items():
         bpy.ops.object.select_all(action='DESELECT')
         for obj in objects:obj.select_set(True)
         bpy.context.view_layer.objects.active=objects[0];bpy.ops.object.join();objects[0].name=f'Neighborhood_{mat}'
+    # Origins can be far from the merged geometry. Bounds, including the full
+    # foundation meshes, remain intact.
+    bpy.context.view_layer.update()
+    triangles=0
+    for obj in bpy.context.scene.objects:
+        if obj.type=='MESH':
+            obj.data.calc_loop_triangles()
+            triangles+=len(obj.data.loop_triangles)
+    (OUT/'neighborhood-manifest.json').write_text(json.dumps({
+        'objects_before_batching':len(original),'named_props':named_props,
+        'batches':len(batches),'triangles':triangles,
+    },indent=2))
     export('neighborhood')
 
 def basket(x,y,z):
@@ -446,4 +476,6 @@ def enrich_neighborhood():
 
 generators={'cat':cat,'detective':detective,'fairy':fairy,'neighborhood':world}
 requested=sys.argv[sys.argv.index('--')+1:] if '--' in sys.argv else list(generators)
-for name in requested:generators[name]()
+for name in requested:
+    SCENERY=name=='neighborhood'
+    generators[name]()
