@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#263f35">
+<title>FindCat 셰이더 진단</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: #263f35; color: #fbf7ed; font: 17px/1.65 system-ui,sans-serif; }
+  main { max-width: 760px; margin: auto; }
+  h1 { font-size: 26px; } h2 { font-size: 20px; }
+  p { color: #e2e9da; } a { color: #eed9ab; }
+  button { font: inherit; margin: 6px 8px 6px 0; padding: 10px 16px; border: 0; border-radius: 8px; background: #eed9ab; color: #263f35; }
+  button:disabled { opacity: .5; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.65 ui-monospace,monospace; padding: 16px; background: #152d24; border-radius: 8px; }
+  #status { font-weight: bold; } #results { margin-bottom: 20px; }
+</style>
+<main>
+  <h1>FindCat 셰이더 진단</h1>
+  <p>게임에서 사용하는 셰이더를 이 기기의 GPU에서 연결해 봅니다. 게임 실행 파일을 내려받거나 게임 설정·진행 상황을 바꾸지 않습니다.</p>
+  <p id="status" role="status">검사 준비 중…</p>
+  <pre id="results" aria-live="polite"></pre>
+  <button id="copy" disabled>결과 복사</button><button id="download" disabled>상세 결과 저장</button>
+  <p id="notice"></p>
+  <details><summary>검사 항목 설명</summary><p>원본은 현재 게임의 GLSL입니다. 나머지 항목은 깊이 출력, 정점 출력, uniform 등을 하나씩 바꾼 비교 검사입니다. 비교 검사는 게임에 적용되지 않습니다. 모든 검사가 통과해도 게임의 전체 실행 성공을 보장하지는 않습니다.</p></details>
+  <p><a href="../">게임으로 돌아가기</a> · <a href="../THIRD_PARTY.md">셰이더 라이선스</a></p>
+</main>
+<script type="module" src="diagnostics.mjs"></script>
+</html>
