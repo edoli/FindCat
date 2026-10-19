@@ -73,6 +73,7 @@ pub fn status(
     camera: Single<(&Camera, &Msaa, &Projection, &GlobalTransform), With<WorldCamera>>,
     fonts: Query<(&TextFont, &Text, &ComputedNode, &UiGlobalTransform)>,
     mut ready: Local<bool>,
+    mut performance_state: Local<Option<(Phase, usize, Modal, bool, bool)>>,
     stats: (
         Query<&Camera>,
         Query<Has<bevy::light::NotShadowCaster>, With<Mesh3d>>,
@@ -113,6 +114,25 @@ pub fn status(
     let Some(root) = doc.document_element() else {
         return;
     };
+    // Tiny opt-in timeline; do not enable the full testbed's per-frame JSON dump
+    // while measuring. Only phase/modal/typing transitions cross the JS boundary.
+    if root.has_attribute("data-performance") {
+        let next = (
+            game.0.phase.clone(),
+            game.0.chapter,
+            game.0.modal.clone(),
+            game.0.typing(),
+            director.overview,
+        );
+        if performance_state.as_ref() != Some(&next) {
+            let state = serde_json::json!({"phase":next.0,"chapter":next.1,
+                "modal":format!("{:?}",next.2),"typing":next.3,"overview":next.4});
+            let _ = root.set_attribute("data-performance-state", &state.to_string());
+            *performance_state = Some(next);
+        }
+    } else {
+        *performance_state = None;
+    }
     if root.has_attribute("data-testbed") {
         let ground_depth = match camera.2 {
             Projection::Orthographic(p) => {

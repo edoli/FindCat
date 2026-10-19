@@ -11,6 +11,7 @@
   <link data-trunk rel="rust" data-bin="findcat" data-cargo-features="web" data-wasm-opt="z" data-initializer="web/initializer.mjs">
   <link data-trunk rel="copy-dir" href="assets">
   <link data-trunk rel="copy-dir" href="web/gpu-diagnostics">
+  <link data-trunk rel="copy-file" href="web/performance.js">
   <link data-trunk rel="copy-file" href="LICENSE">
   <link data-trunk rel="copy-file" href="THIRD_PARTY.md">
   <style>
@@ -40,6 +41,7 @@
     @keyframes breathe { to { transform:translateY(-7px); opacity:.6; } }
   </style>
   <script src="gpu-diagnostics/capture.js"></script>
+  <script src="performance.js"></script>
   <script>
     if (new URLSearchParams(location.search).has('testbed')) document.documentElement.setAttribute('data-testbed','');
     const mobile = navigator.userAgentData?.mobile === true

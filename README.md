@@ -30,6 +30,8 @@ Galaxy Tab S8 Ultra의 Adreno 730 진단에서는 동적으로 선택한 mesh un
 
 프레임 비교는 `uv run --locked --project python python python/profile_web_frames.py --output artifacts/performance`로 실행합니다. 기본 2960×1848에서 제목·놀이 장면의 프레임 간격, 앱 콜백 시간, draw·blit 수와 지원 시 GPU 쿼리 경과시간을 기록합니다. 콜백에는 GL 드라이버 대기가, GPU 쿼리 구간에는 CPU 명령 제출 대기가 포함될 수 있으므로 순수 CPU/GPU 실행 시간으로 해석하지 않습니다. 비교는 다른 GPU 검사와 동시에 실행하지 마세요. `python/validate_render_optimizations.py`는 저장 불러오기, 고양이 퇴장·요정 등장 페이드, 탐색 최대 줌·전체 보기에서 카메라·재질 등록·그림자 범위를 검사합니다. 호스트 GPU 수치를 실제 Android 성능으로 간주하지 않습니다.
 
+실제 기기의 끊김 기록은 게임 주소에 `?performance=1`을 붙여 엽니다. 게임이 준비되면 **성능 기록 시작**을 누르고 평소처럼 플레이한 뒤, 30초 후 **기록 파일 저장**으로 `findcat-performance.json`을 받습니다. 프레임 간격·앱 콜백 시간·draw/blit 수·텍스처/버퍼 업로드·셰이더 API 대기·50ms 이상 메인 스레드 작업·장면/타이핑 전환을 함께 기록합니다. GPU 타이머 확장이 없는 S8에서도 작동하며, GPU의 순수 실행 시간을 측정했다고 가정하지 않습니다. 계측 오버헤드가 포함됩니다. 해상도·MSAA·셰이더·게임 저장은 바꾸지 않으며, 결과를 자동 전송하지 않습니다. 이 매개변수가 없는 일반 플레이에는 계측 래퍼·관찰자·버튼을 설치하지 않습니다.
+
 ```powershell
 rustup target add wasm32-unknown-unknown
 cargo install trunk --version 0.21.14 --locked
