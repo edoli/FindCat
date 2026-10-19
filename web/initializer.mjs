@@ -10,7 +10,7 @@ export default function initializer() {
   };
   return {
     onStart() {
-      status.textContent = '율을 만나기 위해 게임을 내려받고 있어요…';
+      status.textContent = '율이를 만나기 위해 게임을 내려받고 있어요…';
       armTimeout();
     },
     onProgress({current, total}) {

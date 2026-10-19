@@ -591,7 +591,7 @@ fn story(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, n: usize, w: f32)
                 p,
                 m,
                 if n == 4 {
-                    "율을 찾으러 가기\n[Enter]"
+                    "율이를 찾으러 가기\n[Enter]"
                 } else {
                     "다음 이야기  →\n[Enter]"
                 },
@@ -651,8 +651,8 @@ fn field_hud(root: &mut ChildSpawnerCommands, m: &Media, c: &Case, w: f32, celeb
             [
                 "집 주변의 흔적을 모아\n첫 수색 범위를 추리하세요.",
                 "분수와 온실의 흔적을 연결해\n은신처를 추리하세요.",
-                "온실에서 율을 살펴보고,\n익숙한 담요를 찾아주세요.",
-                "온실로 돌아가\n율을 안심시켜 주세요.",
+                "온실에서 율이를 살펴보고,\n익숙한 담요를 찾아주세요.",
+                "온실로 돌아가\n율이를 안심시켜 주세요.",
             ][c.chapter],
             18.,
             INK,
